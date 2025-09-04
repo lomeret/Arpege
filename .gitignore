@@ -1,0 +1,4 @@
+annotations
+__pycache__
+*.pyc
+.env
