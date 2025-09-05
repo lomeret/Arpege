@@ -30,13 +30,17 @@ class MusicNotation:
         self.annotations.append(notation)
         return notation
 
-    def start_new_drawing(self, page_number):
-        """Démarre un nouveau tracé sur une page"""
+    def start_new_drawing(self, page_number, color="#000000", size=2):
+        """Démarre un nouveau tracé sur une page avec couleur et taille"""
         if page_number not in self.drawing_paths:
             self.drawing_paths[page_number] = []
         
-        # Ajouter un nouveau tracé vide
-        new_path = []
+        # Ajouter un nouveau tracé avec métadonnées
+        new_path = {
+            'points': [],
+            'color': color,
+            'size': size
+        }
         self.drawing_paths[page_number].append(new_path)
         return len(self.drawing_paths[page_number]) - 1  # Retourne l'index du nouveau tracé
 
@@ -59,9 +63,19 @@ class MusicNotation:
         
         # S'assurer que l'index existe
         while len(self.drawing_paths[page_number]) <= path_index:
-            self.drawing_paths[page_number].append([])
+            self.drawing_paths[page_number].append({'points': [], 'color': '#000000', 'size': 2})
         
-        self.drawing_paths[page_number][path_index].append(point)
+        # Vérifier si c'est l'ancien format (liste simple) ou nouveau format (dict avec points)
+        current_path = self.drawing_paths[page_number][path_index]
+        if isinstance(current_path, list):
+            # Ancien format : convertir en nouveau format
+            self.drawing_paths[page_number][path_index] = {
+                'points': current_path,
+                'color': '#000000',
+                'size': 2
+            }
+        
+        self.drawing_paths[page_number][path_index]['points'].append(point)
         return point
 
     def draw_indication(self, indication, page_number, relative_x, relative_y):

@@ -1,4 +1,5 @@
-from tkinter import Tk, Frame, Button, filedialog, Canvas, LEFT, RIGHT, TOP, BOTTOM
+from tkinter import Tk, Frame, Button, filedialog, Canvas, LEFT, RIGHT, TOP, BOTTOM, ttk
+from tkinter import font as tkFont
 from PIL import ImageTk
 from features.pdf_viewer import PDFViewer
 from features.annotation import AnnotationManager
@@ -7,7 +8,138 @@ from features.music_notation import MusicNotation
 class MusicSheetEditor:
     def __init__(self, master):
         self.master = master
-        self.master.title("Music Sheet Editor")
+        self.master.title("🎼 Music Sheet Editor - Arpège")
+        self.master.configure(bg='#f0f0f0')
+        
+        # Définir le thème de couleurs moderne
+        self.colors = {
+            'primary': '#2c3e50',      # Bleu foncé élégant
+            'secondary': '#3498db',     # Bleu moderne
+            'accent': '#e74c3c',        # Rouge/coral pour les actions importantes
+            'success': '#27ae60',       # Vert pour les actions positives
+            'warning': '#f39c12',       # Orange pour les avertissements
+            'surface': '#ecf0f1',       # Gris très clair pour les surfaces
+            'background': '#ffffff',    # Blanc pur
+            'text': '#2c3e50',         # Texte foncé
+            'text_light': '#7f8c8d',   # Texte secondaire
+            'border': '#bdc3c7'        # Bordures subtiles
+        }
+        
+        # Polices modernes
+        self.fonts = {
+            'button': ('Segoe UI', 9, 'normal'),
+            'title': ('Segoe UI', 12, 'bold'),
+            'text': ('Segoe UI', 10, 'normal'),
+            'annotation': ('Segoe UI', 14, 'bold')
+        }
+        
+        # Configuration de la grille principale
+        self.master.grid_rowconfigure(1, weight=1)
+        self.master.grid_columnconfigure(0, weight=1)
+
+        # Variables pour le crayon (définir avant l'interface)
+        self.crayon_color = "#000000"  # Noir par défaut
+        self.crayon_size = 2  # Taille fine par défaut
+
+        # Frame supérieur pour les boutons avec style moderne
+        self.top_frame = Frame(self.master, bg=self.colors['surface'], relief='flat', bd=0)
+        self.top_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        
+        # Style moderne pour les boutons
+        self.button_style = {
+            'font': self.fonts['button'],
+            'relief': 'flat',
+            'bd': 0,
+            'padx': 15,
+            'pady': 8,
+            'cursor': 'hand2',
+            'activebackground': self.colors['secondary'],
+            'activeforeground': 'white'
+        }
+        
+        # Styles spécifiques pour différents types de boutons
+        self.primary_btn = {**self.button_style, 'bg': self.colors['primary'], 'fg': 'white'}
+        self.secondary_btn = {**self.button_style, 'bg': self.colors['secondary'], 'fg': 'white'}
+        self.accent_btn = {**self.button_style, 'bg': self.colors['accent'], 'fg': 'white'}
+        self.success_btn = {**self.button_style, 'bg': self.colors['success'], 'fg': 'white'}
+        self.warning_btn = {**self.button_style, 'bg': self.colors['warning'], 'fg': 'white'}
+        self.tool_btn = {**self.button_style, 'bg': self.colors['surface'], 'fg': self.colors['text'], 'relief': 'solid', 'bd': 1}
+
+        # Boutons avec nouveau style
+        self.load_button = Button(self.top_frame, text="📁 Charger PDF", command=self.load_pdf, **self.primary_btn)
+        self.load_button.pack(side=LEFT, padx=(0, 5))
+
+        # Séparateur visuel
+        separator1 = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
+        separator1.pack(side=LEFT, fill='y', padx=5)
+
+        self.prev_button = Button(self.top_frame, text="◀ Page", command=self.prev_page, **self.secondary_btn)
+        self.prev_button.pack(side=LEFT, padx=2)
+        self.next_button = Button(self.top_frame, text="Page ▶", command=self.next_page, **self.secondary_btn)
+        self.next_button.pack(side=LEFT, padx=2)
+
+        # Séparateur visuel
+        separator2 = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
+        separator2.pack(side=LEFT, fill='y', padx=5)
+
+        self.crayon_button = Button(self.top_frame, text="✏️ Crayon", command=self.activate_crayon, **self.tool_btn)
+        self.crayon_button.pack(side=LEFT, padx=2)
+        self.diese_button = Button(self.top_frame, text="♯ Dièse", command=self.add_sharp, **self.tool_btn)
+        self.diese_button.pack(side=LEFT, padx=2)
+        self.bemol_button = Button(self.top_frame, text="♭ Bémol", command=self.add_flat, **self.tool_btn)
+        self.bemol_button.pack(side=LEFT, padx=2)
+        self.indication_button = Button(self.top_frame, text="📝 Indication", command=self.add_indication, **self.tool_btn)
+        self.indication_button.pack(side=LEFT, padx=2)
+        
+        # Séparateur visuel pour les options de crayon
+        separator_crayon = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
+        separator_crayon.pack(side=LEFT, fill='y', padx=5)
+        
+        # Contrôles pour le crayon
+        crayon_frame = Frame(self.top_frame, bg=self.colors['surface'])
+        crayon_frame.pack(side=LEFT, padx=2)
+        
+        # Bouton de couleur
+        self.color_button = Button(crayon_frame, text="🎨", width=3, height=1,
+                                  command=self.choose_crayon_color, **self.tool_btn)
+        self.color_button.pack(side=LEFT, padx=1)
+        
+        # Indicateur de couleur actuelle
+        self.color_indicator = Frame(crayon_frame, width=20, height=20, 
+                                   bg=self.crayon_color, relief='solid', bd=1)
+        self.color_indicator.pack(side=LEFT, padx=2)
+        
+        # Contrôle de taille
+        size_frame = Frame(crayon_frame, bg=self.colors['surface'])
+        size_frame.pack(side=LEFT, padx=2)
+        
+        # Boutons de taille
+        self.size_small_btn = Button(size_frame, text="●", width=2,
+                                   command=lambda: self.set_crayon_size(2), **self.tool_btn)
+        self.size_small_btn.pack(side=LEFT, padx=1)
+        
+        self.size_medium_btn = Button(size_frame, text="●●", width=2,
+                                    command=lambda: self.set_crayon_size(4), **self.tool_btn)
+        self.size_medium_btn.pack(side=LEFT, padx=1)
+        
+        self.size_large_btn = Button(size_frame, text="●●●", width=2,
+                                   command=lambda: self.set_crayon_size(6), **self.tool_btn)
+        self.size_large_btn.pack(side=LEFT, padx=1)
+        
+        # Séparateur visuel
+        separator3 = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
+        separator3.pack(side=LEFT, fill='y', padx=5)
+        
+        self.clear_button = Button(self.top_frame, text="🗑️ Effacer", command=self.clear_current_page, **self.warning_btn)
+        self.clear_button.pack(side=LEFT, padx=2)
+
+        self.save_button = Button(self.top_frame, text="💾 Sauver", command=self.save_annotations, **self.success_btn)
+        self.save_button.pack(side=LEFT, padx=2)
+        
+        self.load_annotations_button = Button(self.top_frame, text="📂 Charger", command=self.load_annotations_manually, **self.tool_btn)
+        self.load_annotations_button.pack(side=LEFT, padx=2)
+        
+        self.master.configure(bg=self.colors['background'])
         
         # Configurer la fenêtre en plein écran ou maximisée
         self.master.state('zoomed')  # Pour Windows, équivalent à maximiser
@@ -25,60 +157,44 @@ class MusicSheetEditor:
         self.pdf_display_height = 0
         self.current_tk_image = None
         
-                # Variables pour les outils de dessin
+        # Variables pour les outils de dessin
         self.drawing = False
         self.last_x = None
         self.last_y = None
         self.active_tool = None
         self.current_drawing_path_index = None  # Index du tracé en cours
+
+        # Canvas pour PDF et dessins - style moderne
+        canvas_frame = Frame(self.master, bg=self.colors['surface'], relief='solid', bd=1)
+        canvas_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(5, 10))
+        canvas_frame.grid_rowconfigure(0, weight=1)
+        canvas_frame.grid_columnconfigure(0, weight=1)
         
-        # Configurer les poids des lignes et colonnes pour la responsivité
-        self.master.grid_rowconfigure(1, weight=1)
-        self.master.grid_columnconfigure(0, weight=1)
-
-        # Top frame for buttons avec padding réduit
-        self.top_frame = Frame(self.master, height=50)
-        self.top_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=2)
-        self.top_frame.grid_propagate(False)
-
-        # Boutons plus compacts
-        btn_options = {'padx': 8, 'pady': 2}
+        self.canvas = Canvas(
+            canvas_frame, 
+            bg=self.colors['surface'], 
+            highlightthickness=0,
+            relief='flat',
+            bd=0
+        )
+        self.canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         
-        self.load_button = Button(self.top_frame, text="Charger PDF", command=self.load_pdf, **btn_options)
-        self.load_button.pack(side=LEFT, padx=2)
-
-        self.prev_button = Button(self.top_frame, text="◄ Page", command=self.prev_page, **btn_options)
-        self.prev_button.pack(side=LEFT, padx=2)
-        self.next_button = Button(self.top_frame, text="Page ►", command=self.next_page, **btn_options)
-        self.next_button.pack(side=LEFT, padx=2)
-
-        self.crayon_button = Button(self.top_frame, text="✏️ Crayon", command=self.activate_crayon, **btn_options)
-        self.crayon_button.pack(side=LEFT, padx=2)
-        self.diese_button = Button(self.top_frame, text="♯ Dièse", command=self.add_sharp, **btn_options)
-        self.diese_button.pack(side=LEFT, padx=2)
-        self.bemol_button = Button(self.top_frame, text="♭ Bémol", command=self.add_flat, **btn_options)
-        self.bemol_button.pack(side=LEFT, padx=2)
-        self.indication_button = Button(self.top_frame, text="📝 Indication", command=self.add_indication, **btn_options)
-        self.indication_button.pack(side=LEFT, padx=2)
-        
-        self.clear_button = Button(self.top_frame, text="🗑️ Effacer Page", command=self.clear_current_page, **btn_options)
-        self.clear_button.pack(side=LEFT, padx=2)
-
-        self.save_button = Button(self.top_frame, text="� Sauver", command=self.save_annotations, **btn_options)
-        self.save_button.pack(side=LEFT, padx=2)
-        
-        self.load_annotations_button = Button(self.top_frame, text="� Charger Annot.", command=self.load_annotations_manually, **btn_options)
-        self.load_annotations_button.pack(side=LEFT, padx=2)
-
-        # Canvas pour PDF et dessins - prend tout l'espace restant
-        self.canvas = Canvas(self.master, bg="white", highlightthickness=0)
-        self.canvas.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        # Variables pour l'état de l'outil actif
+        self.active_tool = None
+        self.tool_buttons = [
+            self.crayon_button, self.diese_button, 
+            self.bemol_button, self.indication_button
+        ]
         
         # Lier les événements
         self.canvas.bind("<ButtonPress-1>", self.on_canvas_press)
         self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
+        self.canvas.bind("<Motion>", self.on_mouse_motion)
         self.master.bind('<Configure>', self.on_window_resize)
+        
+        # Initialiser l'état des boutons de taille
+        self.update_size_buttons()
 
     def load_pdf(self):
         file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
@@ -316,8 +432,10 @@ class MusicSheetEditor:
             canvas_width = self.canvas.winfo_width() or 1100
             canvas_height = self.canvas.winfo_height() or 800
             self.canvas.create_text(canvas_width//2, canvas_height//2, 
-                                   text="Impossible d'afficher le PDF", 
-                                   font=("Arial", 20), fill="red")
+                                   text="📄 Aucun PDF chargé\n\nCliquez sur 'Charger PDF' pour commencer", 
+                                   font=self.fonts['title'], 
+                                   fill=self.colors['text_light'],
+                                   justify='center')
             return
         
         pil_image, x, y, canvas_width, canvas_height = result
@@ -326,10 +444,71 @@ class MusicSheetEditor:
         self.current_tk_image = ImageTk.PhotoImage(pil_image)
         self.canvas.create_image(x, y, anchor="nw", image=self.current_tk_image)
         
-        # Afficher le numéro de page
-        self.canvas.create_text(canvas_width - 50, 20, 
-                               text=f"Page {self.pdf_viewer.current_page+1}/{self.pdf_viewer.page_count}", 
-                               font=("Arial", 14), fill="black", anchor="ne")
+        # Affichage moderne du numéro de page avec fond
+        page_text = f"Page {self.pdf_viewer.current_page+1}/{self.pdf_viewer.page_count}"
+        
+        # Créer un fond pour le texte de la page
+        text_bg = self.canvas.create_rectangle(
+            canvas_width - 120, 10, 
+            canvas_width - 10, 35,
+            fill=self.colors['primary'], 
+            outline="", 
+            width=0
+        )
+        
+        self.canvas.create_text(canvas_width - 65, 22.5, 
+                               text=page_text, 
+                               font=self.fonts['button'], 
+                               fill="white", 
+                               anchor="center")
+        
+        # Ajouter des flèches de navigation inclinées sur les côtés
+        arrow_size = 40
+        arrow_y = canvas_height // 2
+        
+        # Flèche gauche (page précédente) - triangle incliné vers la gauche
+        if self.pdf_viewer.current_page > 0:
+            # Triangle pointant vers la gauche ◤
+            left_arrow_points = [
+                30, arrow_y - arrow_size//2,  # Point haut
+                30, arrow_y + arrow_size//2,  # Point bas
+                30 - arrow_size//2, arrow_y   # Point gauche
+            ]
+            self.left_arrow_id = self.canvas.create_polygon(
+                left_arrow_points, 
+                fill=self.colors['secondary'], 
+                outline=self.colors['primary'],
+                width=2,
+                tags="nav_arrow"
+            )
+            # Texte "◄" au centre
+            self.canvas.create_text(30 - arrow_size//4, arrow_y, 
+                                   text="◄", 
+                                   font=("Arial", 20, "bold"), 
+                                   fill="white",
+                                   tags="nav_arrow")
+        
+        # Flèche droite (page suivante) - triangle incliné vers la droite
+        if self.pdf_viewer.current_page < self.pdf_viewer.page_count - 1:
+            # Triangle pointant vers la droite ◥
+            right_arrow_points = [
+                canvas_width - 30, arrow_y - arrow_size//2,  # Point haut
+                canvas_width - 30, arrow_y + arrow_size//2,  # Point bas
+                canvas_width - 30 + arrow_size//2, arrow_y   # Point droit
+            ]
+            self.right_arrow_id = self.canvas.create_polygon(
+                right_arrow_points, 
+                fill=self.colors['secondary'], 
+                outline=self.colors['primary'],
+                width=2,
+                tags="nav_arrow"
+            )
+            # Texte "►" au centre
+            self.canvas.create_text(canvas_width - 30 + arrow_size//4, arrow_y, 
+                                   text="►", 
+                                   font=("Arial", 20, "bold"), 
+                                   fill="white",
+                                   tags="nav_arrow")
         
         # Redessiner toutes les annotations de la page courante
         self.redraw_annotations()
@@ -348,22 +527,40 @@ class MusicSheetEditor:
             )
             
             if notation['type'] == 'sharp':
-                canvas_id = self.canvas.create_text(abs_x, abs_y, text="♯", font=("Arial", 20, "bold"), fill="blue")
+                canvas_id = self.canvas.create_text(abs_x, abs_y, text="♯", 
+                                                   font=(self.fonts['button'][0], 24, "bold"), 
+                                                   fill=self.colors['accent'])
             elif notation['type'] == 'flat':
-                canvas_id = self.canvas.create_text(abs_x, abs_y, text="♭", font=("Arial", 20, "bold"), fill="blue")
+                canvas_id = self.canvas.create_text(abs_x, abs_y, text="♭", 
+                                                   font=(self.fonts['button'][0], 24, "bold"), 
+                                                   fill=self.colors['accent'])
             elif notation['type'] == 'indication':
-                canvas_id = self.canvas.create_text(abs_x, abs_y, text=notation['text'], font=("Arial", 16, "italic"), fill="green")
+                canvas_id = self.canvas.create_text(abs_x, abs_y, text=notation['text'], 
+                                                   font=(self.fonts['button'][0], 16, "italic"), 
+                                                   fill=self.colors['success'])
             
             notation['canvas_id'] = canvas_id
         
-        # Redessiner les tracés (maintenant organisés en tracés séparés)
+        # Redessiner les tracés avec leurs couleurs et tailles
         drawing_paths = self.music_notation.get_page_drawings(current_page)
-        for path in drawing_paths:
-            if len(path) > 1:
-                # Dessiner chaque tracé séparément
-                for i in range(len(path) - 1):
-                    point1 = path[i]
-                    point2 = path[i + 1]
+        for path_data in drawing_paths:
+            # Gérer l'ancien format (liste simple) et le nouveau format (dict avec métadonnées)
+            if isinstance(path_data, list):
+                # Ancien format : liste de points
+                path_points = path_data
+                path_color = self.colors['primary']  # Couleur par défaut
+                path_size = 3  # Taille par défaut
+            else:
+                # Nouveau format : dict avec points, couleur et taille
+                path_points = path_data.get('points', [])
+                path_color = path_data.get('color', self.colors['primary'])
+                path_size = path_data.get('size', 3)
+            
+            if len(path_points) > 1:
+                # Dessiner chaque segment du tracé
+                for i in range(len(path_points) - 1):
+                    point1 = path_points[i]
+                    point2 = path_points[i + 1]
                     
                     abs_x1, abs_y1 = self.annotation_manager.relative_to_absolute(
                         point1['relative_x'], point1['relative_y'],
@@ -377,7 +574,13 @@ class MusicSheetEditor:
                         self.pdf_display_width, self.pdf_display_height
                     )
                     
-                    self.canvas.create_line(abs_x1, abs_y1, abs_x2, abs_y2, fill="red", width=2)
+                    self.canvas.create_line(
+                        abs_x1, abs_y1, abs_x2, abs_y2, 
+                        fill=path_color,  # Utiliser la couleur sauvegardée
+                        width=path_size,  # Utiliser la taille sauvegardée
+                        capstyle='round', 
+                        smooth=True
+                    )
 
     def is_click_on_pdf(self, x, y):
         """Vérifie si le clic est sur la partition"""
@@ -452,20 +655,126 @@ class MusicSheetEditor:
         self.annotation_manager.clear_page_annotations(current_page)
         self.render_pdf_with_annotations()
 
+    def update_tool_buttons(self):
+        """Met à jour l'apparence des boutons d'outils pour montrer lequel est actif"""
+        active_style = {**self.tool_btn, 'bg': self.colors['secondary'], 'fg': 'white'}
+        inactive_style = self.tool_btn
+        
+        for button in self.tool_buttons:
+            button.configure(**inactive_style)
+        
+        # Mettre en surbrillance le bouton actif
+        if self.active_tool == "crayon":
+            self.crayon_button.configure(**active_style)
+        elif self.active_tool == "sharp":
+            self.diese_button.configure(**active_style)
+        elif self.active_tool == "flat":
+            self.bemol_button.configure(**active_style)
+        elif self.active_tool == "indication":
+            self.indication_button.configure(**active_style)
+
     def activate_crayon(self):
         self.active_tool = "crayon"
+        self.update_tool_buttons()
+        self.canvas.configure(cursor="pencil")
 
     def add_sharp(self):
         self.active_tool = "sharp"
+        self.update_tool_buttons()
+        self.canvas.configure(cursor="crosshair")
+        print("🔧 Outil dièse activé")
 
     def add_flat(self):
         self.active_tool = "flat"
+        self.update_tool_buttons()
+        self.canvas.configure(cursor="crosshair")
+        print("🔧 Outil bémol activé")
 
     def add_indication(self):
         self.active_tool = "indication"
+        self.update_tool_buttons()
+        self.canvas.configure(cursor="crosshair")
+
+    def choose_crayon_color(self):
+        """Ouvre un sélecteur de couleur pour le crayon"""
+        from tkinter import colorchooser
+        color = colorchooser.askcolor(title="Choisir la couleur du crayon", 
+                                     color=self.crayon_color)
+        if color[1]:  # Si une couleur a été sélectionnée
+            self.crayon_color = color[1]
+            self.color_indicator.configure(bg=self.crayon_color)
+            print(f"🎨 Couleur du crayon changée: {self.crayon_color}")
+
+    def set_crayon_size(self, size):
+        """Définit la taille du crayon"""
+        self.crayon_size = size
+        self.update_size_buttons()
+        print(f"📏 Taille du crayon changée: {size}px")
+
+    def update_size_buttons(self):
+        """Met à jour l'apparence des boutons de taille pour montrer lequel est actif"""
+        active_size_style = {**self.tool_btn, 'bg': self.colors['accent'], 'fg': 'white'}
+        inactive_size_style = self.tool_btn
+        
+        # Réinitialiser tous les boutons
+        self.size_small_btn.configure(**inactive_size_style)
+        self.size_medium_btn.configure(**inactive_size_style)
+        self.size_large_btn.configure(**inactive_size_style)
+        
+        # Mettre en surbrillance le bouton actif
+        if self.crayon_size == 2:
+            self.size_small_btn.configure(**active_size_style)
+        elif self.crayon_size == 4:
+            self.size_medium_btn.configure(**active_size_style)
+        elif self.crayon_size == 6:
+            self.size_large_btn.configure(**active_size_style)
+
+    def check_navigation_click(self, x, y):
+        """Vérifie si le clic est sur une flèche de navigation et effectue l'action"""
+        canvas_width = self.canvas.winfo_width() or 1100
+        canvas_height = self.canvas.winfo_height() or 800
+        arrow_size = 40
+        arrow_y = canvas_height // 2
+        
+        # Zone de la flèche gauche
+        left_arrow_zone = {
+            'x_min': 10,
+            'x_max': 50,
+            'y_min': arrow_y - arrow_size//2 - 10,
+            'y_max': arrow_y + arrow_size//2 + 10
+        }
+        
+        # Zone de la flèche droite
+        right_arrow_zone = {
+            'x_min': canvas_width - 50,
+            'x_max': canvas_width - 10,
+            'y_min': arrow_y - arrow_size//2 - 10,
+            'y_max': arrow_y + arrow_size//2 + 10
+        }
+        
+        # Vérifier clic sur flèche gauche (page précédente)
+        if (left_arrow_zone['x_min'] <= x <= left_arrow_zone['x_max'] and 
+            left_arrow_zone['y_min'] <= y <= left_arrow_zone['y_max'] and
+            self.pdf_viewer.current_page > 0):
+            self.prev_page()
+            return True
+        
+        # Vérifier clic sur flèche droite (page suivante)
+        if (right_arrow_zone['x_min'] <= x <= right_arrow_zone['x_max'] and 
+            right_arrow_zone['y_min'] <= y <= right_arrow_zone['y_max'] and
+            self.pdf_viewer.current_page < self.pdf_viewer.page_count - 1):
+            self.next_page()
+            return True
+        
+        return False
 
     def on_canvas_press(self, event):
+        # Vérifier d'abord si le clic est sur une flèche de navigation
+        if self.check_navigation_click(event.x, event.y):
+            return
+        
         if not self.is_click_on_pdf(event.x, event.y):
+            print("❌ Clic en dehors de la zone PDF")
             return
         
         # Convertir en coordonnées relatives
@@ -482,32 +791,45 @@ class MusicSheetEditor:
             self.last_x = event.x
             self.last_y = event.y
             
-            # Démarrer un nouveau tracé
+            # Démarrer un nouveau tracé avec couleur et taille actuelles
             current_page = self.pdf_viewer.current_page
-            self.current_drawing_path_index = self.music_notation.start_new_drawing(current_page)
+            self.current_drawing_path_index = self.music_notation.start_new_drawing(
+                current_page, self.crayon_color, self.crayon_size)
             
             # Ajouter le premier point
             self.music_notation.add_drawing_point(current_page, rel_x, rel_y, self.current_drawing_path_index)
             
         elif self.active_tool == "sharp":
             notation = self.music_notation.add_sharp(current_page, rel_x, rel_y)
-            canvas_id = self.canvas.create_text(event.x, event.y, text="♯", font=("Arial", 20, "bold"), fill="blue")
+            canvas_id = self.canvas.create_text(event.x, event.y, text="♯", 
+                                               font=(self.fonts['button'][0], 24, "bold"), 
+                                               fill=self.colors['accent'])
             notation['canvas_id'] = canvas_id
             
         elif self.active_tool == "flat":
             notation = self.music_notation.add_flat(current_page, rel_x, rel_y)
-            canvas_id = self.canvas.create_text(event.x, event.y, text="♭", font=("Arial", 20, "bold"), fill="blue")
+            canvas_id = self.canvas.create_text(event.x, event.y, text="♭", 
+                                               font=(self.fonts['button'][0], 24, "bold"), 
+                                               fill=self.colors['accent'])
             notation['canvas_id'] = canvas_id
             
         elif self.active_tool == "indication":
             notation = self.music_notation.draw_indication("Ind.", current_page, rel_x, rel_y)
-            canvas_id = self.canvas.create_text(event.x, event.y, text="Ind.", font=("Arial", 16, "italic"), fill="green")
+            canvas_id = self.canvas.create_text(event.x, event.y, text="Ind.", 
+                                               font=(self.fonts['button'][0], 16, "italic"), 
+                                               fill=self.colors['success'])
             notation['canvas_id'] = canvas_id
 
     def on_canvas_drag(self, event):
         if self.active_tool == "crayon" and self.drawing and self.is_click_on_pdf(event.x, event.y):
-            # Dessiner la ligne
-            self.canvas.create_line(self.last_x, self.last_y, event.x, event.y, fill="red", width=2)
+            # Dessiner avec la couleur et taille sélectionnées
+            self.canvas.create_line(
+                self.last_x, self.last_y, event.x, event.y, 
+                fill=self.crayon_color,  # Utiliser la couleur sélectionnée
+                width=self.crayon_size,  # Utiliser la taille sélectionnée
+                capstyle='round', 
+                smooth=True
+            )
             
             # Convertir en coordonnées relatives et ajouter le point
             rel_x, rel_y = self.annotation_manager.absolute_to_relative(
@@ -529,6 +851,50 @@ class MusicSheetEditor:
             self.last_y = None
             self.current_drawing_path_index = None  # Réinitialiser l'index du tracé
             self.current_drawing_path = []
+
+    def on_mouse_motion(self, event):
+        """Gère le mouvement de la souris pour changer le curseur sur les flèches"""
+        canvas_width = self.canvas.winfo_width() or 1100
+        canvas_height = self.canvas.winfo_height() or 800
+        arrow_size = 40
+        arrow_y = canvas_height // 2
+        
+        # Zone de la flèche gauche
+        left_arrow_zone = {
+            'x_min': 10,
+            'x_max': 50,
+            'y_min': arrow_y - arrow_size//2 - 10,
+            'y_max': arrow_y + arrow_size//2 + 10
+        }
+        
+        # Zone de la flèche droite
+        right_arrow_zone = {
+            'x_min': canvas_width - 50,
+            'x_max': canvas_width - 10,
+            'y_min': arrow_y - arrow_size//2 - 10,
+            'y_max': arrow_y + arrow_size//2 + 10
+        }
+        
+        # Vérifier si on survole une flèche
+        over_left_arrow = (left_arrow_zone['x_min'] <= event.x <= left_arrow_zone['x_max'] and 
+                          left_arrow_zone['y_min'] <= event.y <= left_arrow_zone['y_max'] and
+                          self.pdf_viewer.current_page > 0)
+        
+        over_right_arrow = (right_arrow_zone['x_min'] <= event.x <= right_arrow_zone['x_max'] and 
+                           right_arrow_zone['y_min'] <= event.y <= right_arrow_zone['y_max'] and
+                           self.pdf_viewer.current_page < self.pdf_viewer.page_count - 1)
+        
+        # Changer le curseur selon la position
+        if over_left_arrow or over_right_arrow:
+            self.canvas.configure(cursor="hand2")
+        else:
+            # Restaurer le curseur selon l'outil actif
+            if self.active_tool == "crayon":
+                self.canvas.configure(cursor="pencil")
+            elif self.active_tool in ["sharp", "flat", "indication"]:
+                self.canvas.configure(cursor="crosshair")
+            else:
+                self.canvas.configure(cursor="arrow")
 
 if __name__ == "__main__":
     root = Tk()
