@@ -16,6 +16,8 @@ fallback in `src/main_tk.py`.
 - **Zoom & Pan**: Mouse wheel to zoom (centered on the cursor), right-click drag to pan.
 - **Two-page Spread View**: "Affichage > Vue double page" shows two consecutive pages side by
   side, so page turns can be anticipated while playing.
+- **Page Management**: "Affichage > Gérer les pages…" opens a thumbnail-based dialog to reorder,
+   hide, duplicate, or reset pages without modifying the original PDF.
 - **Keyboard Navigation**: Left/Right, Page Up/Down, Home/End to move between pages; `Esc` to
   deselect the current tool.
 - **Recent Files**: "Fichier > Fichiers récents" reopens a previously annotated score in one click.
@@ -67,6 +69,7 @@ Follow the on-screen instructions to select and edit your PDF music sheets.
 | `Left` / `Right`, `Page Up` / `Page Down` | Previous / next page |
 | `Home` / `End` | First / last page |
 | `Ctrl+ +` / `Ctrl+ -` / `Ctrl+0` | Zoom in / out / fit to window |
+| `Affichage > Gérer les pages…` | Reorder, hide, duplicate, or reset page sequences |
 | `Ctrl+D` | Toggle two-page spread view |
 | `Ctrl+E` | Export annotated PDF |
 | Mouse wheel | Zoom at cursor |

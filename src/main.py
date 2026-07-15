@@ -722,6 +722,8 @@ class ArpegeWindow(QMainWindow):
         m_view.addAction(self._act("Zoom arrière", self.zoom_out, "Ctrl+-"))
         m_view.addAction(self._act("Ajuster à la fenêtre", self.fit_view, "Ctrl+0"))
         m_view.addSeparator()
+        m_view.addAction(self._act("Gérer les pages…", self.manage_pages))
+        m_view.addSeparator()
         self.spread_action = QAction("Vue double page", self, checkable=True)
         self.spread_action.setShortcut("Ctrl+D")
         self.spread_action.toggled.connect(self.toggle_spread_view)
@@ -788,6 +790,13 @@ class ArpegeWindow(QMainWindow):
         fit.setToolTip("Ajuster à la fenêtre (Ctrl+0)")
         fit.clicked.connect(self.fit_view)
         tb.addWidget(fit)
+
+        pages = QToolButton(text="Pages")
+        pages.setIcon(painted_icon('pages'))
+        pages.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        pages.setToolTip("Gérer l'ordre, la visibilité et les duplications des pages")
+        pages.clicked.connect(self.manage_pages)
+        tb.addWidget(pages)
 
         self.spread_btn = QToolButton(text="Double page")
         self.spread_btn.setIcon(painted_icon('pages'))
@@ -1103,6 +1112,44 @@ class ArpegeWindow(QMainWindow):
         if not title and self.current_pdf_path:
             title = os.path.basename(self.current_pdf_path)
         self.setWindowTitle(f"Arpège — {title}" if title else "Arpège")
+
+    def _default_sequence(self):
+        if not self.pdf_viewer.pdf_document:
+            return []
+        return list(range(self.pdf_viewer.page_count))
+
+    def _normalize_sequence(self, sequence):
+        default = self._default_sequence()
+        sequence = list(sequence)
+        return None if sequence == default else sequence
+
+    def _page_thumb_icon(self, page_num):
+        pixmap = self._page_pixmap(page_num)
+        thumb = pixmap.scaled(70, 99, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return QIcon(thumb)
+
+    def manage_pages(self):
+        if not self.pdf_viewer.pdf_document:
+            QMessageBox.information(self, "Gestion des pages",
+                                    "Ouvrez d'abord une partition PDF.")
+            return
+        current_page = self.pdf_viewer.current_page
+        seq = self.effective_sequence() or self._default_sequence()
+        dialog = PageOrderDialog(self, self.pdf_viewer.page_count, seq, self._page_thumb_icon)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        new_sequence = dialog.sequence()
+        self.page_sequence = self._normalize_sequence(new_sequence)
+        if new_sequence:
+            if current_page in new_sequence:
+                self.seq_pos = new_sequence.index(current_page)
+            else:
+                self.seq_pos = max(0, min(self.seq_pos, len(new_sequence) - 1))
+        else:
+            self.seq_pos = 0
+        self.rebuild_scene()
+        self.fit_view()
 
     # ------------------------------------------------------------------
     # Signets (bookmarks)
@@ -1457,7 +1504,7 @@ class ArpegeWindow(QMainWindow):
         # Signets et séquence de pages personnalisée
         self.bookmarks = save_data.get('bookmarks', [])
         seq = save_data.get('page_sequence')
-        self.page_sequence = list(seq) if seq else None
+        self.page_sequence = list(seq) if seq is not None else None
         self.seq_pos = 0
 
     def load_annotations_manually(self):
@@ -1547,19 +1594,19 @@ class ArpegeWindow(QMainWindow):
         self.fit_view()
 
     def prev_page(self):
-        if self.pdf_viewer.pdf_document:
+        if self.pdf_viewer.pdf_document and self.effective_sequence():
             self._goto_seq_pos(self.seq_pos - 1)
 
     def next_page(self):
-        if self.pdf_viewer.pdf_document:
+        if self.pdf_viewer.pdf_document and self.effective_sequence():
             self._goto_seq_pos(self.seq_pos + 1)
 
     def go_first(self):
-        if self.pdf_viewer.pdf_document:
+        if self.pdf_viewer.pdf_document and self.effective_sequence():
             self._goto_seq_pos(0)
 
     def go_last(self):
-        if self.pdf_viewer.pdf_document:
+        if self.pdf_viewer.pdf_document and self.effective_sequence():
             self._goto_seq_pos(len(self.effective_sequence()) - 1)
 
     def zoom_in(self):
@@ -1616,6 +1663,19 @@ class ArpegeWindow(QMainWindow):
         self.view.centerOn(0, y / 2)
         self.page_chip.setText("— / —")
 
+    def show_empty_sequence(self):
+        self.scene.clear()
+        self.page_slots = []
+        text = self.scene.addSimpleText("Séquence vide — ouvrez Gérer les pages…",
+                                        QFont("Segoe UI", 14))
+        text.setBrush(QColor(C['subtext']))
+        br = text.boundingRect()
+        text.setPos(-br.width() / 2, -br.height() / 2)
+        self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-60, -60, 60, 60))
+        self.view.resetTransform()
+        self.view.centerOn(0, 0)
+        self.page_chip.setText("0 / 0")
+
     def _page_pixmap(self, page_num):
         if page_num in self._pixmap_cache:
             return self._pixmap_cache[page_num]
@@ -1641,6 +1701,9 @@ class ArpegeWindow(QMainWindow):
         self.page_slots = []
 
         seq = self.effective_sequence()
+        if not seq:
+            self.show_empty_sequence()
+            return
         self.seq_pos = max(0, min(self.seq_pos, len(seq) - 1))
         self.pdf_viewer.current_page = seq[self.seq_pos]
         current = seq[self.seq_pos]
