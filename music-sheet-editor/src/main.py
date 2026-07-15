@@ -163,6 +163,10 @@ class MusicSheetEditor:
         self.last_y = None
         self.active_tool = None
         self.current_drawing_path_index = None  # Index du tracé en cours
+        
+        # Buffer pour optimiser le dessin du crayon
+        self.drawing_buffer = []  # Buffer pour les points en attente
+        self.buffer_timer = None  # Timer pour vider le buffer
 
         # Canvas pour PDF et dessins - style moderne
         canvas_frame = Frame(self.master, bg=self.colors['surface'], relief='solid', bd=1)
@@ -192,6 +196,9 @@ class MusicSheetEditor:
         self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
         self.canvas.bind("<Motion>", self.on_mouse_motion)
         self.master.bind('<Configure>', self.on_window_resize)
+        
+        # Optimisation pour le crayon - réduire la fréquence des événements
+        self.last_motion_time = 0
         
         # Initialiser l'état des boutons de taille
         self.update_size_buttons()
@@ -673,27 +680,52 @@ class MusicSheetEditor:
         elif self.active_tool == "indication":
             self.indication_button.configure(**active_style)
 
-    def activate_crayon(self):
-        self.active_tool = "crayon"
+    def deactivate_tools(self):
+        """Désactive tous les outils et remet le curseur par défaut"""
+        self.active_tool = None
         self.update_tool_buttons()
-        self.canvas.configure(cursor="pencil")
+        self.canvas.configure(cursor="arrow")
+        print("🔧 Tous les outils désactivés")
+
+    def activate_crayon(self):
+        if self.active_tool == "crayon":
+            # Si le crayon est déjà actif, le désactiver
+            self.deactivate_tools()
+        else:
+            self.active_tool = "crayon"
+            self.update_tool_buttons()
+            self.canvas.configure(cursor="pencil")
+            print("🔧 Outil crayon activé")
 
     def add_sharp(self):
-        self.active_tool = "sharp"
-        self.update_tool_buttons()
-        self.canvas.configure(cursor="crosshair")
-        print("🔧 Outil dièse activé")
+        if self.active_tool == "sharp":
+            # Si le dièse est déjà actif, le désactiver
+            self.deactivate_tools()
+        else:
+            self.active_tool = "sharp"
+            self.update_tool_buttons()
+            self.canvas.configure(cursor="crosshair")
+            print("🔧 Outil dièse activé")
 
     def add_flat(self):
-        self.active_tool = "flat"
-        self.update_tool_buttons()
-        self.canvas.configure(cursor="crosshair")
-        print("🔧 Outil bémol activé")
+        if self.active_tool == "flat":
+            # Si le bémol est déjà actif, le désactiver
+            self.deactivate_tools()
+        else:
+            self.active_tool = "flat"
+            self.update_tool_buttons()
+            self.canvas.configure(cursor="crosshair")
+            print("🔧 Outil bémol activé")
 
     def add_indication(self):
-        self.active_tool = "indication"
-        self.update_tool_buttons()
-        self.canvas.configure(cursor="crosshair")
+        if self.active_tool == "indication":
+            # Si l'indication est déjà active, la désactiver
+            self.deactivate_tools()
+        else:
+            self.active_tool = "indication"
+            self.update_tool_buttons()
+            self.canvas.configure(cursor="crosshair")
+            print("🔧 Outil indication activé")
 
     def choose_crayon_color(self):
         """Ouvre un sélecteur de couleur pour le crayon"""
@@ -791,12 +823,18 @@ class MusicSheetEditor:
             self.last_x = event.x
             self.last_y = event.y
             
+            # Vider le buffer au début d'un nouveau tracé
+            self.drawing_buffer.clear()
+            if self.buffer_timer:
+                self.master.after_cancel(self.buffer_timer)
+                self.buffer_timer = None
+            
             # Démarrer un nouveau tracé avec couleur et taille actuelles
             current_page = self.pdf_viewer.current_page
             self.current_drawing_path_index = self.music_notation.start_new_drawing(
                 current_page, self.crayon_color, self.crayon_size)
             
-            # Ajouter le premier point
+            # Ajouter le premier point immédiatement (pas de buffer pour le premier point)
             self.music_notation.add_drawing_point(current_page, rel_x, rel_y, self.current_drawing_path_index)
             
         elif self.active_tool == "sharp":
@@ -814,42 +852,109 @@ class MusicSheetEditor:
             notation['canvas_id'] = canvas_id
             
         elif self.active_tool == "indication":
-            notation = self.music_notation.draw_indication("Ind.", current_page, rel_x, rel_y)
-            canvas_id = self.canvas.create_text(event.x, event.y, text="Ind.", 
-                                               font=(self.fonts['button'][0], 16, "italic"), 
-                                               fill=self.colors['success'])
-            notation['canvas_id'] = canvas_id
+            # Demander à l'utilisateur de saisir le texte de l'indication
+            from tkinter import simpledialog
+            indication_text = simpledialog.askstring(
+                "Indication musicale", 
+                "Entrez le texte de l'indication :",
+                initialvalue="",
+                parent=self.master
+            )
+            
+            # Si l'utilisateur a saisi quelque chose
+            if indication_text and indication_text.strip():
+                notation = self.music_notation.draw_indication(indication_text.strip(), current_page, rel_x, rel_y)
+                canvas_id = self.canvas.create_text(event.x, event.y, text=indication_text.strip(), 
+                                                   font=(self.fonts['button'][0], 16, "italic"), 
+                                                   fill=self.colors['success'])
+                notation['canvas_id'] = canvas_id
+            else:
+                print("❌ Aucune indication ajoutée - texte vide ou annulé")
 
     def on_canvas_drag(self, event):
         if self.active_tool == "crayon" and self.drawing and self.is_click_on_pdf(event.x, event.y):
-            # Dessiner avec la couleur et taille sélectionnées
+            # Vérifier la distance minimale pour éviter trop de points
+            import time
+            current_time = time.time() * 1000  # millisecondes
+            
+            # Limiter à environ 60 FPS pour le crayon
+            if current_time - self.last_motion_time < 16:  # ~16ms = 60 FPS
+                # Juste dessiner sans sauvegarder le point
+                self.canvas.create_line(
+                    self.last_x, self.last_y, event.x, event.y, 
+                    fill=self.crayon_color,
+                    width=self.crayon_size,
+                    capstyle='round', 
+                    smooth=True
+                )
+                self.last_x = event.x
+                self.last_y = event.y
+                return
+            
+            self.last_motion_time = current_time
+            
+            # Dessiner immédiatement sur le canvas pour la réactivité
             self.canvas.create_line(
                 self.last_x, self.last_y, event.x, event.y, 
-                fill=self.crayon_color,  # Utiliser la couleur sélectionnée
-                width=self.crayon_size,  # Utiliser la taille sélectionnée
+                fill=self.crayon_color,
+                width=self.crayon_size,
                 capstyle='round', 
                 smooth=True
             )
             
-            # Convertir en coordonnées relatives et ajouter le point
+            # Ajouter les coordonnées au buffer pour traitement ultérieur
             rel_x, rel_y = self.annotation_manager.absolute_to_relative(
                 event.x, event.y,
                 self.pdf_display_x, self.pdf_display_y,
                 self.pdf_display_width, self.pdf_display_height
             )
             
-            current_page = self.pdf_viewer.current_page
-            self.music_notation.add_drawing_point(current_page, rel_x, rel_y, self.current_drawing_path_index)
+            self.drawing_buffer.append({
+                'page': self.pdf_viewer.current_page,
+                'rel_x': rel_x,
+                'rel_y': rel_y,
+                'path_index': self.current_drawing_path_index
+            })
+            
+            # Traiter le buffer de façon asynchrone pour ne pas bloquer l'interface
+            if self.buffer_timer:
+                self.master.after_cancel(self.buffer_timer)
+            self.buffer_timer = self.master.after(5, self.process_drawing_buffer)  # Réduit à 5ms
             
             self.last_x = event.x
             self.last_y = event.y
 
+    def process_drawing_buffer(self):
+        """Traite le buffer de points de dessin de façon asynchrone"""
+        if not self.drawing_buffer:
+            return
+        
+        # Traiter tous les points du buffer
+        for point_data in self.drawing_buffer:
+            self.music_notation.add_drawing_point(
+                point_data['page'], 
+                point_data['rel_x'], 
+                point_data['rel_y'], 
+                point_data['path_index']
+            )
+        
+        # Vider le buffer
+        self.drawing_buffer.clear()
+        self.buffer_timer = None
+
     def on_canvas_release(self, event):
         if self.active_tool == "crayon":
             self.drawing = False
+            
+            # S'assurer que le buffer est vidé immédiatement
+            if self.buffer_timer:
+                self.master.after_cancel(self.buffer_timer)
+                self.buffer_timer = None
+            self.process_drawing_buffer()
+            
             self.last_x = None
             self.last_y = None
-            self.current_drawing_path_index = None  # Réinitialiser l'index du tracé
+            self.current_drawing_path_index = None
             self.current_drawing_path = []
 
     def on_mouse_motion(self, event):
