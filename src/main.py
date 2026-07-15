@@ -1,6 +1,5 @@
-"""Arpège — éditeur de partitions PDF (interface Qt / PySide6).
-
-L'ancienne interface tkinter reste disponible dans main_tk.py.
+"""
+Arpège — éditeur de partitions PDF (interface Qt / PySide6).
 """
 
 import json
@@ -14,9 +13,10 @@ from PySide6.QtCore import Qt, QPointF, QRectF, QSize
 from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QImage, QKeySequence,
                            QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut)
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QColorDialog, QFileDialog,
-                               QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem,
-                               QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView,
-                               QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMessageBox,
+                               QFrame, QGraphicsDropShadowEffect, QGraphicsItem,
+                               QGraphicsPathItem, QGraphicsRectItem, QGraphicsScene,
+                               QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout,
+                               QInputDialog, QLabel, QMainWindow, QMessageBox,
                                QSizePolicy, QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from features.pdf_viewer import PDFViewer
@@ -33,7 +33,7 @@ ZOOM_MIN = 0.15
 ZOOM_MAX = 8.0
 ZOOM_STEP = 1.15
 ERASER_TOLERANCE = 0.03  # tolérance de clic en coordonnées relatives
-SPREAD_GAP = 60          # espace entre les deux pages en vue double
+SPREAD_GAP = 60          # espace vertical entre les deux bandes en vue double
 
 # Palette sombre (Catppuccin Mocha)
 C = {
@@ -387,6 +387,7 @@ class SheetView(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._panning = False
         self._pan_last = QPointF()
+        self._press_pos = None       # position du clic gauche, pour distinguer clic et glisser
 
     def wheelEvent(self, event):
         if not self.window.current_pdf_path:
@@ -405,7 +406,9 @@ class SheetView(QGraphicsView):
             event.accept()
             return
         if event.button() == Qt.LeftButton:
-            # Aucun outil actif : glisser pour se déplacer
+            # Aucun outil actif : mémoriser la position pour distinguer un simple
+            # clic (tourner la page) d'un glisser (déplacer la vue).
+            self._press_pos = event.position()
             self.setDragMode(QGraphicsView.ScrollHandDrag)
             super().mousePressEvent(event)
             return
@@ -445,6 +448,16 @@ class SheetView(QGraphicsView):
         if event.button() == Qt.LeftButton:
             self.setDragMode(QGraphicsView.NoDrag)
             self.window.apply_tool_cursor()
+            # Clic simple (sans glisser notable) sans outil actif : tourner la page.
+            # Moitié droite → page suivante, moitié gauche → page précédente.
+            if self._press_pos is not None and not self.window.active_tool:
+                moved = (event.position() - self._press_pos).manhattanLength()
+                if moved < 6:
+                    if event.position().x() >= self.viewport().width() / 2:
+                        self.window.next_page()
+                    else:
+                        self.window.prev_page()
+            self._press_pos = None
 
 
 class ArpegeWindow(QMainWindow):
@@ -468,13 +481,14 @@ class ArpegeWindow(QMainWindow):
         self.spread_view = False
 
         self._pixmap_cache = {}      # page -> QPixmap
-        self.page_rects = []         # [(page_num, QRectF scène)] pour les pages affichées
+        # Bandes affichées : {'page', 'rect' (QRectF scène), 'y0', 'y1'}
+        # y0/y1 = portion verticale de la page couverte par la bande (0.0–1.0)
+        self.page_slots = []
 
         # État du tracé en cours
         self.stroke_active = False
         self._stroke_points = []
-        self._stroke_page = None
-        self._stroke_rect = None
+        self._stroke_slot = None
         self._stroke_item = None
         self._stroke_path = None
 
@@ -1018,7 +1032,7 @@ class ArpegeWindow(QMainWindow):
 
     def show_placeholder(self):
         self.scene.clear()
-        self.page_rects = []
+        self.page_slots = []
         y = 0.0
         logo_path = os.path.join(ASSETS_DIR, "Logo.png")
         if os.path.exists(logo_path):
@@ -1059,33 +1073,59 @@ class ArpegeWindow(QMainWindow):
             saved_v = self.view.verticalScrollBar().value()
 
         self.scene.clear()
-        self.page_rects = []
+        self.page_slots = []
 
         current = self.pdf_viewer.current_page
-        pages = [current]
+        # Vue double : moitié basse de la page courante au-dessus,
+        # moitié haute de la page suivante juste en dessous.
         if self.spread_view and current + 1 < self.pdf_viewer.page_count:
-            pages.append(current + 1)
+            specs = [
+                {'page': current, 'y0': 0.5, 'y1': 1.0},
+                {'page': current + 1, 'y0': 0.0, 'y1': 0.5},
+            ]
+        else:
+            specs = [{'page': current, 'y0': 0.0, 'y1': 1.0}]
 
-        x_offset = 0.0
-        for page_num in pages:
-            pixmap = self._page_pixmap(page_num)
+        y_offset = 0.0
+        for spec in specs:
+            full = self._page_pixmap(spec['page'])
+            if spec['y0'] == 0.0 and spec['y1'] == 1.0:
+                pixmap = full
+            else:
+                top = int(spec['y0'] * full.height())
+                bottom = int(spec['y1'] * full.height())
+                pixmap = full.copy(0, top, full.width(), bottom - top)
+
             item = self.scene.addPixmap(pixmap)
-            item.setPos(x_offset, 0)
+            item.setPos(0, y_offset)
             shadow = QGraphicsDropShadowEffect()
             shadow.setBlurRadius(48)
             shadow.setOffset(0, 10)
             shadow.setColor(QColor(0, 0, 0, 200))
             item.setGraphicsEffect(shadow)
 
-            rect = QRectF(x_offset, 0, pixmap.width(), pixmap.height())
-            self.page_rects.append((page_num, rect))
-            self._draw_page_annotations(page_num, rect)
-            x_offset += pixmap.width() + SPREAD_GAP
+            rect = QRectF(0, y_offset, pixmap.width(), pixmap.height())
+            slot = {'page': spec['page'], 'rect': rect,
+                    'y0': spec['y0'], 'y1': spec['y1']}
+            self.page_slots.append(slot)
+
+            # Étiquette de page au-dessus de chaque bande (vue double uniquement)
+            if len(specs) > 1:
+                label = QGraphicsSimpleTextItem(f"page {spec['page'] + 1}")
+                label_font = QFont("Segoe UI")
+                label_font.setPixelSize(int(full.height() * 0.016))
+                label.setFont(label_font)
+                label.setBrush(QColor(C['subtext']))
+                label.setPos(rect.x(), rect.y() - full.height() * 0.024)
+                self.scene.addItem(label)
+
+            self._draw_page_annotations(slot)
+            y_offset += pixmap.height() + SPREAD_GAP
 
         self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-80, -80, 80, 80))
 
-        if self.spread_view and len(pages) == 2:
-            self.page_chip.setText(f"{pages[0] + 1}-{pages[1] + 1} / {self.pdf_viewer.page_count}")
+        if len(specs) > 1:
+            self.page_chip.setText(f"{current + 1}-{current + 2} / {self.pdf_viewer.page_count}")
         else:
             self.page_chip.setText(f"{current + 1} / {self.pdf_viewer.page_count}")
 
@@ -1094,21 +1134,47 @@ class ArpegeWindow(QMainWindow):
             self.view.horizontalScrollBar().setValue(saved_h)
             self.view.verticalScrollBar().setValue(saved_v)
 
-    def _draw_page_annotations(self, page_num, rect):
+    def _rel_to_scene(self, slot, rel_x, rel_y):
+        """Coordonnées relatives page (0–1) → coordonnées scène dans la bande."""
+        rect = slot['rect']
+        band = slot['y1'] - slot['y0']
+        x = rect.x() + rel_x * rect.width()
+        y = rect.y() + (rel_y - slot['y0']) / band * rect.height()
+        return x, y
+
+    def _slot_rel(self, slot, scene_pos):
+        """Coordonnées scène → coordonnées relatives page (0–1)."""
+        rect = slot['rect']
+        band = slot['y1'] - slot['y0']
+        rel_x = (scene_pos.x() - rect.x()) / rect.width()
+        rel_y = slot['y0'] + (scene_pos.y() - rect.y()) / rect.height() * band
+        return rel_x, rel_y
+
+    def _draw_page_annotations(self, slot):
+        page_num = slot['page']
+        rect = slot['rect']
+        # Hauteur de la page complète en unités scène (la bande peut être partielle)
+        page_height = rect.height() / (slot['y1'] - slot['y0'])
+
+        # Conteneur de découpe : les annotations débordant de la bande sont rognées
+        container = QGraphicsRectItem(rect)
+        container.setPen(QPen(Qt.NoPen))
+        container.setFlag(QGraphicsItem.ItemClipsChildrenToShape, True)
+        self.scene.addItem(container)
+
         # Notations musicales (dièse, bémol, indication)
         # Couleurs saturées identiques à l'export PDF (lisibles sur papier blanc)
         symbol_color = QColor('#e74c3c')
         indication_color = QColor('#27ae60')
         symbol_font = QFont("DejaVu Sans")
-        symbol_font.setPixelSize(int(rect.height() * 0.034))
+        symbol_font.setPixelSize(int(page_height * 0.034))
         symbol_font.setBold(True)
         text_font = QFont("Segoe UI")
-        text_font.setPixelSize(int(rect.height() * 0.022))
+        text_font.setPixelSize(int(page_height * 0.022))
         text_font.setItalic(True)
 
         for notation in self.music_notation.get_page_notations(page_num):
-            x = rect.x() + notation['relative_x'] * rect.width()
-            y = rect.y() + notation['relative_y'] * rect.height()
+            x, y = self._rel_to_scene(slot, notation['relative_x'], notation['relative_y'])
             if notation['type'] == 'sharp':
                 item = QGraphicsSimpleTextItem("♯")
                 item.setFont(symbol_font)
@@ -1125,7 +1191,7 @@ class ArpegeWindow(QMainWindow):
                 continue
             br = item.boundingRect()
             item.setPos(x - br.width() / 2, y - br.height() / 2)
-            self.scene.addItem(item)
+            item.setParentItem(container)
 
         # Tracés au crayon
         for path_data in self.music_notation.get_page_drawings(page_num):
@@ -1139,14 +1205,12 @@ class ArpegeWindow(QMainWindow):
                 continue
             path = QPainterPath()
             first = points[0]
-            path.moveTo(rect.x() + first['relative_x'] * rect.width(),
-                        rect.y() + first['relative_y'] * rect.height())
+            path.moveTo(*self._rel_to_scene(slot, first['relative_x'], first['relative_y']))
             for pt in points[1:]:
-                path.lineTo(rect.x() + pt['relative_x'] * rect.width(),
-                            rect.y() + pt['relative_y'] * rect.height())
+                path.lineTo(*self._rel_to_scene(slot, pt['relative_x'], pt['relative_y']))
             item = QGraphicsPathItem(path)
             item.setPen(self._stroke_pen(color, size, rect))
-            self.scene.addItem(item)
+            item.setParentItem(container)
 
     def _stroke_pen(self, color, size, rect):
         """Épaisseur en points PDF convertie à l'échelle de la page rendue."""
@@ -1161,29 +1225,28 @@ class ArpegeWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _locate(self, scene_pos):
-        """Retourne (page_num, rect, rel_x, rel_y) ou None si hors page."""
-        for page_num, rect in self.page_rects:
-            if rect.contains(scene_pos):
-                rel_x = (scene_pos.x() - rect.x()) / rect.width()
-                rel_y = (scene_pos.y() - rect.y()) / rect.height()
-                return page_num, rect, rel_x, rel_y
+        """Retourne la bande sous le curseur, ou None si hors partition."""
+        for slot in self.page_slots:
+            if slot['rect'].contains(scene_pos):
+                return slot
         return None
 
     def on_canvas_press(self, scene_pos):
-        located = self._locate(scene_pos)
-        if located is None:
+        slot = self._locate(scene_pos)
+        if slot is None:
             return
-        page_num, rect, rel_x, rel_y = located
+        page_num = slot['page']
+        rel_x, rel_y = self._slot_rel(slot, scene_pos)
 
         if self.active_tool == 'crayon':
             self.push_history()
             self.stroke_active = True
-            self._stroke_page = page_num
-            self._stroke_rect = rect
+            self._stroke_slot = slot
             self._stroke_points = [{'relative_x': rel_x, 'relative_y': rel_y}]
             self._stroke_path = QPainterPath(scene_pos)
             self._stroke_item = QGraphicsPathItem(self._stroke_path)
-            self._stroke_item.setPen(self._stroke_pen(self.crayon_color, self.crayon_size, rect))
+            self._stroke_item.setPen(
+                self._stroke_pen(self.crayon_color, self.crayon_size, slot['rect']))
             self.scene.addItem(self._stroke_item)
 
         elif self.active_tool in ('sharp', 'flat'):
@@ -1206,29 +1269,28 @@ class ArpegeWindow(QMainWindow):
             self.erase_at(page_num, rel_x, rel_y)
 
     def on_canvas_move(self, scene_pos):
-        if not self.stroke_active or self._stroke_rect is None:
+        if not self.stroke_active or self._stroke_slot is None:
             return
-        rect = self._stroke_rect
-        # Limiter le tracé à la page où il a commencé
+        rect = self._stroke_slot['rect']
+        # Limiter le tracé à la bande où il a commencé
         x = min(max(scene_pos.x(), rect.left()), rect.right())
         y = min(max(scene_pos.y(), rect.top()), rect.bottom())
         self._stroke_path.lineTo(x, y)
         self._stroke_item.setPath(self._stroke_path)
-        self._stroke_points.append({
-            'relative_x': (x - rect.x()) / rect.width(),
-            'relative_y': (y - rect.y()) / rect.height(),
-        })
+        rel_x, rel_y = self._slot_rel(self._stroke_slot, QPointF(x, y))
+        self._stroke_points.append({'relative_x': rel_x, 'relative_y': rel_y})
 
     def on_canvas_release(self):
         if not self.stroke_active:
             return
         self.stroke_active = False
         if len(self._stroke_points) > 1:
+            page_num = self._stroke_slot['page']
             index = self.music_notation.start_new_drawing(
-                self._stroke_page, self.crayon_color, self.crayon_size)
+                page_num, self.crayon_color, self.crayon_size)
             for pt in self._stroke_points:
                 self.music_notation.add_drawing_point(
-                    self._stroke_page, pt['relative_x'], pt['relative_y'], index)
+                    page_num, pt['relative_x'], pt['relative_y'], index)
         else:
             # Tracé vide : annuler l'entrée d'historique superflue
             self.history_manager.undo_stack.pop()
@@ -1237,8 +1299,7 @@ class ArpegeWindow(QMainWindow):
         self._stroke_points = []
         self._stroke_item = None
         self._stroke_path = None
-        self._stroke_page = None
-        self._stroke_rect = None
+        self._stroke_slot = None
 
     def erase_at(self, page_num, rel_x, rel_y):
         best_dist = ERASER_TOLERANCE
