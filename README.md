@@ -1,6 +1,10 @@
-# Music Sheet Editor
+# Arpège — Music Sheet Editor
 
 Music Sheet Editor is a Python application designed for musicians to manage and annotate their PDF music sheets. This application allows users to select PDF files, make modifications such as adding sharps, flats, and annotations, and navigate through their music sheets seamlessly.
+
+The interface is built with **Qt (PySide6)**: dark theme, antialiased drawing, smooth
+zoom/pan on a hardware-friendly canvas. The previous tkinter interface is kept as a
+fallback in `src/main_tk.py`.
 
 ## Features
 
@@ -49,6 +53,8 @@ To run the application, activate the virtual environment (see above) then execut
 python src/main.py
 ```
 
+The legacy tkinter interface remains available with `python src/main_tk.py`.
+
 Follow the on-screen instructions to select and edit your PDF music sheets.
 
 ### Keyboard shortcuts
@@ -60,9 +66,11 @@ Follow the on-screen instructions to select and edit your PDF music sheets.
 | `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
 | `Left` / `Right`, `Page Up` / `Page Down` | Previous / next page |
 | `Home` / `End` | First / last page |
-| `Ctrl+ +` / `Ctrl+ -` / `Ctrl+0` | Zoom in / out / reset |
+| `Ctrl+ +` / `Ctrl+ -` / `Ctrl+0` | Zoom in / out / fit to window |
+| `Ctrl+D` | Toggle two-page spread view |
+| `Ctrl+E` | Export annotated PDF |
 | Mouse wheel | Zoom at cursor |
-| Right-click drag | Pan the view |
+| Left drag (no tool) / right drag | Pan the view |
 | `Esc` | Deactivate the current tool |
 
 ## Contributing

@@ -1,7 +1,24 @@
-from tkinter import (Tk, Frame, Button, filedialog, Canvas, LEFT, RIGHT, TOP, BOTTOM, ttk,
-                      Menu, BooleanVar, messagebox)
-from tkinter import font as tkFont
-from PIL import ImageTk
+"""Arpège — éditeur de partitions PDF (interface Qt / PySide6).
+
+L'ancienne interface tkinter reste disponible dans main_tk.py.
+"""
+
+import json
+import os
+import sys
+from datetime import datetime
+
+import fitz
+
+from PySide6.QtCore import Qt, QPointF, QRectF, QSize
+from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QImage, QKeySequence,
+                           QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut)
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QColorDialog, QFileDialog,
+                               QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem,
+                               QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView,
+                               QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMessageBox,
+                               QSizePolicy, QToolBar, QToolButton, QVBoxLayout, QWidget)
+
 from features.pdf_viewer import PDFViewer
 from features.annotation import AnnotationManager
 from features.music_notation import MusicNotation
@@ -9,535 +26,754 @@ from features.history import HistoryManager
 from features.pdf_export import export_annotated_pdf
 from utils import recent_files
 
-ZOOM_MIN = 0.5
-ZOOM_MAX = 4.0
-ZOOM_STEP = 1.25
-ERASER_TOLERANCE = 0.03  # tolérance de clic en coordonnées relatives (~3% de la partition)
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets')
+
+RENDER_DPI = 200
+ZOOM_MIN = 0.15
+ZOOM_MAX = 8.0
+ZOOM_STEP = 1.15
+ERASER_TOLERANCE = 0.03  # tolérance de clic en coordonnées relatives
+SPREAD_GAP = 60          # espace entre les deux pages en vue double
+
+# Palette sombre (Catppuccin Mocha)
+C = {
+    'crust':    '#11111b',
+    'mantle':   '#181825',
+    'base':     '#1e1e2e',
+    'surface0': '#313244',
+    'surface1': '#45475a',
+    'text':     '#cdd6f4',
+    'subtext':  '#a6adc8',
+    'blue':     '#89b4fa',
+    'lavender': '#b4befe',
+    'red':      '#f38ba8',
+    'green':    '#a6e3a1',
+    'yellow':   '#f9e2af',
+    'peach':    '#fab387',
+}
+
+QSS = f"""
+QMainWindow, QWidget {{
+    background-color: {C['base']};
+    color: {C['text']};
+    font-family: 'Segoe UI', 'Noto Sans', 'DejaVu Sans', sans-serif;
+    font-size: 13px;
+}}
+
+QMenuBar {{
+    background-color: {C['mantle']};
+    color: {C['text']};
+    padding: 2px 8px;
+    border: none;
+}}
+QMenuBar::item {{
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: transparent;
+}}
+QMenuBar::item:selected {{ background-color: {C['surface0']}; }}
+
+QMenu {{
+    background-color: {C['mantle']};
+    color: {C['text']};
+    border: 1px solid {C['surface0']};
+    border-radius: 10px;
+    padding: 6px;
+}}
+QMenu::item {{
+    padding: 7px 28px 7px 16px;
+    border-radius: 6px;
+}}
+QMenu::item:selected {{ background-color: {C['surface0']}; }}
+QMenu::item:disabled {{ color: {C['surface1']}; }}
+QMenu::separator {{
+    height: 1px;
+    background: {C['surface0']};
+    margin: 6px 10px;
+}}
+
+QToolBar {{
+    background-color: {C['mantle']};
+    border: none;
+    padding: 8px 12px;
+    spacing: 6px;
+}}
+QToolBar::separator {{
+    background: {C['surface0']};
+    width: 1px;
+    margin: 6px 8px;
+}}
+
+QToolButton {{
+    background-color: transparent;
+    color: {C['text']};
+    border: none;
+    border-radius: 9px;
+    padding: 7px 12px;
+    font-weight: 600;
+}}
+QToolButton:hover {{ background-color: {C['surface0']}; }}
+QToolButton:pressed {{ background-color: {C['surface1']}; }}
+QToolButton:checked {{
+    background-color: {C['blue']};
+    color: {C['crust']};
+}}
+QToolButton:disabled {{ color: {C['surface1']}; }}
+
+QToolButton#primary {{
+    background-color: {C['blue']};
+    color: {C['crust']};
+}}
+QToolButton#primary:hover {{ background-color: {C['lavender']}; }}
+
+QToolButton#success {{
+    background-color: {C['green']};
+    color: {C['crust']};
+}}
+QToolButton#success:hover {{ background-color: #b9ecb4; }}
+
+QLabel#chip {{
+    background-color: {C['surface0']};
+    color: {C['text']};
+    border-radius: 9px;
+    padding: 7px 14px;
+    font-weight: 600;
+}}
+
+QFrame#sidebar {{
+    background-color: {C['mantle']};
+    border: none;
+    border-right: 1px solid {C['surface0']};
+}}
+QFrame#sidebar QToolButton {{
+    padding: 0px;
+    min-width: 42px;
+    max-width: 42px;
+    min-height: 42px;
+    max-height: 42px;
+    font-size: 19px;
+    border-radius: 11px;
+}}
+
+QStatusBar {{
+    background-color: {C['mantle']};
+    color: {C['subtext']};
+    border-top: 1px solid {C['surface0']};
+}}
+QStatusBar::item {{ border: none; }}
+
+QGraphicsView {{
+    background-color: {C['crust']};
+    border: none;
+}}
+
+QMessageBox, QInputDialog, QColorDialog, QFileDialog {{
+    background-color: {C['base']};
+}}
+QPushButton {{
+    background-color: {C['surface0']};
+    color: {C['text']};
+    border: none;
+    border-radius: 8px;
+    padding: 7px 18px;
+    font-weight: 600;
+}}
+QPushButton:hover {{ background-color: {C['surface1']}; }}
+QPushButton:default {{
+    background-color: {C['blue']};
+    color: {C['crust']};
+}}
+QLineEdit, QSpinBox {{
+    background-color: {C['surface0']};
+    color: {C['text']};
+    border: 1px solid {C['surface1']};
+    border-radius: 8px;
+    padding: 6px 10px;
+    selection-background-color: {C['blue']};
+    selection-color: {C['crust']};
+}}
+QScrollBar:vertical {{
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 10px;
+    margin: 2px;
+}}
+QScrollBar::handle {{
+    background: {C['surface1']};
+    border-radius: 4px;
+    min-height: 30px;
+    min-width: 30px;
+}}
+QScrollBar::handle:hover {{ background: {C['blue']}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+"""
 
 
-class MusicSheetEditor:
-    def __init__(self, master):
-        self.master = master
-        self.master.title("🎼 Music Sheet Editor - Arpège")
-        self.master.configure(bg='#f0f0f0')
+def circle_icon(diameter, color="#cdd6f4", canvas=22):
+    """Crée une icône ronde pleine (pour les boutons de taille de crayon)."""
+    pm = QPixmap(canvas, canvas)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setBrush(QColor(color))
+    p.setPen(Qt.NoPen)
+    r = diameter / 2
+    p.drawEllipse(QPointF(canvas / 2, canvas / 2), r, r)
+    p.end()
+    return QIcon(pm)
 
-        # Définir le thème de couleurs moderne
-        self.colors = {
-            'primary': '#2c3e50',      # Bleu foncé élégant
-            'secondary': '#3498db',     # Bleu moderne
-            'accent': '#e74c3c',        # Rouge/coral pour les actions importantes
-            'success': '#27ae60',       # Vert pour les actions positives
-            'warning': '#f39c12',       # Orange pour les avertissements
-            'surface': '#ecf0f1',       # Gris très clair pour les surfaces
-            'background': '#ffffff',    # Blanc pur
-            'text': '#2c3e50',         # Texte foncé
-            'text_light': '#7f8c8d',   # Texte secondaire
-            'border': '#bdc3c7'        # Bordures subtiles
-        }
 
-        # Polices modernes
-        self.fonts = {
-            'button': ('Segoe UI', 9, 'normal'),
-            'title': ('Segoe UI', 12, 'bold'),
-            'text': ('Segoe UI', 10, 'normal'),
-            'annotation': ('Segoe UI', 14, 'bold')
-        }
+def asset_icon(white_name, dark_name=None):
+    """Icône depuis assets/ : version blanche au repos, foncée à l'état coché.
 
-        # Configuration de la grille principale
-        self.master.grid_rowconfigure(1, weight=1)
-        self.master.grid_columnconfigure(0, weight=1)
+    Retourne None si le fichier est absent (repli sur les glyphes/icônes peintes).
+    """
+    white_path = os.path.join(ASSETS_DIR, white_name)
+    if not os.path.exists(white_path):
+        return None
+    icon = QIcon()
+    modes = (QIcon.Normal, QIcon.Active, QIcon.Selected)
+    for mode in modes:
+        icon.addFile(white_path, mode=mode, state=QIcon.Off)
+    if dark_name:
+        dark_path = os.path.join(ASSETS_DIR, dark_name)
+        if os.path.exists(dark_path):
+            for mode in modes:
+                icon.addFile(dark_path, mode=mode, state=QIcon.On)
+    return icon
 
-        # Variables pour le crayon (définir avant l'interface)
-        self.crayon_color = "#000000"  # Noir par défaut
-        self.crayon_size = 2  # Taille fine par défaut
 
-        # Frame supérieur pour les boutons avec style moderne
-        self.top_frame = Frame(self.master, bg=self.colors['surface'], relief='flat', bd=0)
-        self.top_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+def painted_pixmap(kind, color=None, size=36):
+    """Pixmaps vectoriels dessinés au QPainter (indépendants des polices emoji)."""
+    color = QColor(color or C['text'])
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(color, size * 0.09)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    s = size
 
-        # Style moderne pour les boutons
-        self.button_style = {
-            'font': self.fonts['button'],
-            'relief': 'flat',
-            'bd': 0,
-            'padx': 15,
-            'pady': 8,
-            'cursor': 'hand2',
-            'activebackground': self.colors['secondary'],
-            'activeforeground': 'white'
-        }
+    if kind == 'folder':
+        p.drawRoundedRect(QRectF(s*0.14, s*0.3, s*0.72, s*0.48), s*0.08, s*0.08)
+        p.drawLine(QPointF(s*0.14, s*0.3), QPointF(s*0.22, s*0.2))
+        p.drawLine(QPointF(s*0.22, s*0.2), QPointF(s*0.42, s*0.2))
+        p.drawLine(QPointF(s*0.42, s*0.2), QPointF(s*0.5, s*0.3))
+    elif kind == 'save':
+        # Flèche vers le bas dans un bac
+        p.drawLine(QPointF(s*0.5, s*0.16), QPointF(s*0.5, s*0.58))
+        p.drawLine(QPointF(s*0.32, s*0.42), QPointF(s*0.5, s*0.6))
+        p.drawLine(QPointF(s*0.68, s*0.42), QPointF(s*0.5, s*0.6))
+        p.drawPolyline([QPointF(s*0.16, s*0.62), QPointF(s*0.16, s*0.82),
+                        QPointF(s*0.84, s*0.82), QPointF(s*0.84, s*0.62)])
+    elif kind == 'export':
+        # Flèche vers le haut hors d'un bac
+        p.drawLine(QPointF(s*0.5, s*0.6), QPointF(s*0.5, s*0.16))
+        p.drawLine(QPointF(s*0.32, s*0.34), QPointF(s*0.5, s*0.15))
+        p.drawLine(QPointF(s*0.68, s*0.34), QPointF(s*0.5, s*0.15))
+        p.drawPolyline([QPointF(s*0.16, s*0.62), QPointF(s*0.16, s*0.82),
+                        QPointF(s*0.84, s*0.82), QPointF(s*0.84, s*0.62)])
+    elif kind == 'pages':
+        p.drawRoundedRect(QRectF(s*0.12, s*0.2, s*0.34, s*0.6), s*0.05, s*0.05)
+        p.drawRoundedRect(QRectF(s*0.54, s*0.2, s*0.34, s*0.6), s*0.05, s*0.05)
+    elif kind == 'trash':
+        p.drawLine(QPointF(s*0.2, s*0.28), QPointF(s*0.8, s*0.28))
+        p.drawLine(QPointF(s*0.4, s*0.28), QPointF(s*0.42, s*0.18))
+        p.drawLine(QPointF(s*0.42, s*0.18), QPointF(s*0.58, s*0.18))
+        p.drawLine(QPointF(s*0.58, s*0.18), QPointF(s*0.6, s*0.28))
+        p.drawPolyline([QPointF(s*0.26, s*0.28), QPointF(s*0.32, s*0.84),
+                        QPointF(s*0.68, s*0.84), QPointF(s*0.74, s*0.28)])
+        p.drawLine(QPointF(s*0.44, s*0.4), QPointF(s*0.46, s*0.72))
+        p.drawLine(QPointF(s*0.56, s*0.4), QPointF(s*0.54, s*0.72))
+    elif kind == 'fit':
+        # Quatre coins vers l'extérieur
+        for (cx, cy, dx, dy) in [(0.2, 0.2, 1, 1), (0.8, 0.2, -1, 1),
+                                  (0.2, 0.8, 1, -1), (0.8, 0.8, -1, -1)]:
+            p.drawLine(QPointF(s*cx, s*cy), QPointF(s*(cx + dx*0.14), s*cy))
+            p.drawLine(QPointF(s*cx, s*cy), QPointF(s*cx, s*(cy + dy*0.14)))
+    elif kind == 'pencil':
+        p.setPen(Qt.NoPen)
+        p.setBrush(color)
+        # Corps du crayon (diagonale)
+        p.drawPolygon(QPolygonF([
+            QPointF(s*0.64, s*0.12), QPointF(s*0.84, s*0.32),
+            QPointF(s*0.42, s*0.74), QPointF(s*0.22, s*0.54),
+        ]))
+        # Pointe
+        p.drawPolygon(QPolygonF([
+            QPointF(s*0.19, s*0.60), QPointF(s*0.36, s*0.77),
+            QPointF(s*0.10, s*0.86),
+        ]))
+        # Rainure de la gomme (creusée dans le corps)
+        p.setCompositionMode(QPainter.CompositionMode_Clear)
+        groove = QPen(Qt.black, s*0.05)
+        p.setPen(groove)
+        p.drawLine(QPointF(s*0.56, s*0.16), QPointF(s*0.78, s*0.38))
+        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+    elif kind == 'sharp':
+        thin = QPen(color, s*0.07, Qt.SolidLine, Qt.RoundCap)
+        thick = QPen(color, s*0.11, Qt.SolidLine, Qt.RoundCap)
+        # Deux verticales
+        p.setPen(thin)
+        p.drawLine(QPointF(s*0.40, s*0.14), QPointF(s*0.40, s*0.86))
+        p.drawLine(QPointF(s*0.60, s*0.10), QPointF(s*0.60, s*0.82))
+        # Deux barres inclinées (plus épaisses)
+        p.setPen(thick)
+        p.drawLine(QPointF(s*0.22, s*0.42), QPointF(s*0.78, s*0.30))
+        p.drawLine(QPointF(s*0.22, s*0.68), QPointF(s*0.78, s*0.56))
+    elif kind == 'flat':
+        stem = QPen(color, s*0.08, Qt.SolidLine, Qt.RoundCap)
+        p.setPen(stem)
+        # Hampe verticale
+        p.drawLine(QPointF(s*0.38, s*0.10), QPointF(s*0.38, s*0.84))
+        # Panse arrondie
+        bowl = QPainterPath()
+        bowl.moveTo(s*0.38, s*0.48)
+        bowl.cubicTo(QPointF(s*0.74, s*0.42), QPointF(s*0.76, s*0.72),
+                     QPointF(s*0.38, s*0.84))
+        p.setBrush(Qt.NoBrush)
+        p.drawPath(bowl)
+    elif kind == 'eraser':
+        p.save()
+        p.translate(s*0.5, s*0.42)
+        p.rotate(-45)
+        p.setPen(Qt.NoPen)
+        p.setBrush(color)
+        p.drawRoundedRect(QRectF(-s*0.28, -s*0.17, s*0.56, s*0.34), s*0.07, s*0.07)
+        # Séparation biseau/gomme
+        p.setCompositionMode(QPainter.CompositionMode_Clear)
+        p.setPen(QPen(Qt.black, s*0.05))
+        p.drawLine(QPointF(-s*0.02, -s*0.19), QPointF(-s*0.02, s*0.19))
+        p.restore()
+        # Ligne de base « effacée »
+        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        p.setPen(QPen(color, s*0.07, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(QPointF(s*0.18, s*0.88), QPointF(s*0.74, s*0.88))
 
-        # Styles spécifiques pour différents types de boutons
-        self.primary_btn = {**self.button_style, 'bg': self.colors['primary'], 'fg': 'white'}
-        self.secondary_btn = {**self.button_style, 'bg': self.colors['secondary'], 'fg': 'white'}
-        self.accent_btn = {**self.button_style, 'bg': self.colors['accent'], 'fg': 'white'}
-        self.success_btn = {**self.button_style, 'bg': self.colors['success'], 'fg': 'white'}
-        self.warning_btn = {**self.button_style, 'bg': self.colors['warning'], 'fg': 'white'}
-        self.tool_btn = {**self.button_style, 'bg': self.colors['surface'], 'fg': self.colors['text'], 'relief': 'solid', 'bd': 1}
+    p.end()
+    return pm
 
-        # Boutons avec nouveau style
-        self.load_button = Button(self.top_frame, text="📁 Charger PDF", command=self.load_pdf, **self.primary_btn)
-        self.load_button.pack(side=LEFT, padx=(0, 5))
 
-        # Séparateur visuel
-        separator1 = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
-        separator1.pack(side=LEFT, fill='y', padx=5)
+def painted_icon(kind, color=None, size=36):
+    return QIcon(painted_pixmap(kind, color, size))
 
-        self.prev_button = Button(self.top_frame, text="◀ Page", command=self.prev_page, **self.secondary_btn)
-        self.prev_button.pack(side=LEFT, padx=2)
-        self.next_button = Button(self.top_frame, text="Page ▶", command=self.next_page, **self.secondary_btn)
-        self.next_button.pack(side=LEFT, padx=2)
 
-        # Séparateur visuel
-        separator2 = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
-        separator2.pack(side=LEFT, fill='y', padx=5)
+def two_state_icon(kind, size=36):
+    """Icône claire au repos, foncée à l'état coché (fond bleu clair)."""
+    icon = QIcon()
+    icon.addPixmap(painted_pixmap(kind, C['text'], size), QIcon.Normal, QIcon.Off)
+    icon.addPixmap(painted_pixmap(kind, C['crust'], size), QIcon.Normal, QIcon.On)
+    return icon
 
-        self.crayon_button = Button(self.top_frame, text="✏️ Crayon", command=self.activate_crayon, **self.tool_btn)
-        self.crayon_button.pack(side=LEFT, padx=2)
-        self.diese_button = Button(self.top_frame, text="♯ Dièse", command=self.add_sharp, **self.tool_btn)
-        self.diese_button.pack(side=LEFT, padx=2)
-        self.bemol_button = Button(self.top_frame, text="♭ Bémol", command=self.add_flat, **self.tool_btn)
-        self.bemol_button.pack(side=LEFT, padx=2)
-        self.indication_button = Button(self.top_frame, text="📝 Indication", command=self.add_indication, **self.tool_btn)
-        self.indication_button.pack(side=LEFT, padx=2)
-        self.eraser_button = Button(self.top_frame, text="🧹 Gomme", command=self.activate_eraser, **self.tool_btn)
-        self.eraser_button.pack(side=LEFT, padx=2)
 
-        # Séparateur visuel pour les options de crayon
-        separator_crayon = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
-        separator_crayon.pack(side=LEFT, fill='y', padx=5)
+class SheetView(QGraphicsView):
+    """Vue de la partition : zoom à la molette, panoramique, délégation des outils."""
 
-        # Contrôles pour le crayon
-        crayon_frame = Frame(self.top_frame, bg=self.colors['surface'])
-        crayon_frame.pack(side=LEFT, padx=2)
+    def __init__(self, window):
+        super().__init__()
+        self.window = window
+        self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.AnchorViewCenter)
+        self.setDragMode(QGraphicsView.NoDrag)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._panning = False
+        self._pan_last = QPointF()
 
-        # Bouton de couleur
-        self.color_button = Button(crayon_frame, text="🎨", width=3, height=1,
-                                  command=self.choose_crayon_color, **self.tool_btn)
-        self.color_button.pack(side=LEFT, padx=1)
+    def wheelEvent(self, event):
+        if not self.window.current_pdf_path:
+            return
+        factor = ZOOM_STEP if event.angleDelta().y() > 0 else 1 / ZOOM_STEP
+        current = self.transform().m11()
+        target = current * factor
+        if target < ZOOM_MIN or target > ZOOM_MAX:
+            return
+        self.scale(factor, factor)
+        self.window.update_zoom_chip()
 
-        # Indicateur de couleur actuelle
-        self.color_indicator = Frame(crayon_frame, width=20, height=20,
-                                   bg=self.crayon_color, relief='solid', bd=1)
-        self.color_indicator.pack(side=LEFT, padx=2)
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.window.active_tool:
+            self.window.on_canvas_press(self.mapToScene(event.position().toPoint()))
+            event.accept()
+            return
+        if event.button() == Qt.LeftButton:
+            # Aucun outil actif : glisser pour se déplacer
+            self.setDragMode(QGraphicsView.ScrollHandDrag)
+            super().mousePressEvent(event)
+            return
+        if event.button() == Qt.RightButton:
+            self._panning = True
+            self._pan_last = event.position()
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
-        # Contrôle de taille
-        size_frame = Frame(crayon_frame, bg=self.colors['surface'])
-        size_frame.pack(side=LEFT, padx=2)
+    def mouseMoveEvent(self, event):
+        if self.window.stroke_active:
+            self.window.on_canvas_move(self.mapToScene(event.position().toPoint()))
+            event.accept()
+            return
+        if self._panning:
+            delta = event.position() - self._pan_last
+            self._pan_last = event.position()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(delta.x()))
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(delta.y()))
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
 
-        # Boutons de taille
-        self.size_small_btn = Button(size_frame, text="●", width=2,
-                                   command=lambda: self.set_crayon_size(2), **self.tool_btn)
-        self.size_small_btn.pack(side=LEFT, padx=1)
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.window.stroke_active:
+            self.window.on_canvas_release()
+            event.accept()
+            return
+        if event.button() == Qt.RightButton and self._panning:
+            self._panning = False
+            self.window.apply_tool_cursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.LeftButton:
+            self.setDragMode(QGraphicsView.NoDrag)
+            self.window.apply_tool_cursor()
 
-        self.size_medium_btn = Button(size_frame, text="●●", width=2,
-                                    command=lambda: self.set_crayon_size(4), **self.tool_btn)
-        self.size_medium_btn.pack(side=LEFT, padx=1)
 
-        self.size_large_btn = Button(size_frame, text="●●●", width=2,
-                                   command=lambda: self.set_crayon_size(6), **self.tool_btn)
-        self.size_large_btn.pack(side=LEFT, padx=1)
-
-        # Séparateur visuel
-        separator3 = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
-        separator3.pack(side=LEFT, fill='y', padx=5)
-
-        self.clear_button = Button(self.top_frame, text="🗑️ Effacer", command=self.clear_current_page, **self.warning_btn)
-        self.clear_button.pack(side=LEFT, padx=2)
-
-        self.save_button = Button(self.top_frame, text="💾 Sauver", command=self.save_annotations, **self.success_btn)
-        self.save_button.pack(side=LEFT, padx=2)
-
-        self.load_annotations_button = Button(self.top_frame, text="📂 Charger", command=self.load_annotations_manually, **self.tool_btn)
-        self.load_annotations_button.pack(side=LEFT, padx=2)
-
-        # Séparateur visuel
-        separator4 = Frame(self.top_frame, width=2, bg=self.colors['text_light'])
-        separator4.pack(side=LEFT, fill='y', padx=5)
-
-        # Contrôles de zoom
-        self.zoom_out_button = Button(self.top_frame, text="🔍-", width=3, command=self.zoom_out, **self.tool_btn)
-        self.zoom_out_button.pack(side=LEFT, padx=1)
-        self.zoom_label = Button(self.top_frame, text="100%", width=5, command=self.reset_zoom, **self.tool_btn)
-        self.zoom_label.pack(side=LEFT, padx=1)
-        self.zoom_in_button = Button(self.top_frame, text="🔍+", width=3, command=self.zoom_in, **self.tool_btn)
-        self.zoom_in_button.pack(side=LEFT, padx=1)
-
-        self.master.configure(bg=self.colors['background'])
-
-        # Configurer la fenêtre en plein écran ou maximisée
-        try:
-            self.master.state('zoomed')  # Windows : maximise la fenêtre
-            self.master.geometry("1200x900")
-        except Exception:
-            # 'zoomed' n'est pas supporté sur X11/Linux (ex. WSL sans gestionnaire compatible) :
-            # on maximise via la géométrie de l'écran à la place.
-            screen_width = self.master.winfo_screenwidth()
-            screen_height = self.master.winfo_screenheight()
-            self.master.geometry(f"{screen_width}x{screen_height}+0+0")
+class ArpegeWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Arpège — Éditeur de partitions")
+        logo_path = os.path.join(ASSETS_DIR, "Logo.png")
+        if os.path.exists(logo_path):
+            self.setWindowIcon(QIcon(logo_path))
+        self.resize(1320, 900)
 
         self.pdf_viewer = PDFViewer()
         self.annotation_manager = AnnotationManager()
         self.music_notation = MusicNotation()
         self.history_manager = HistoryManager()
+
         self.current_pdf_path = None
-
-        # Variables pour les dimensions de la partition affichée (mode page unique)
-        self.pdf_display_x = 0
-        self.pdf_display_y = 0
-        self.pdf_display_width = 0
-        self.pdf_display_height = 0
-        self.base_scale = 1.0
-        self.current_tk_image = None
-
-        # Variables de zoom / pan
-        self.zoom_level = 1.0
-        self.pan_x = 0
-        self.pan_y = 0
-        self.pan_start_x = None
-        self.pan_start_y = None
-        self.pan_origin_x = 0
-        self.pan_origin_y = 0
-
-        # Vue double page ("à cheval")
+        self.active_tool = None      # None | 'crayon' | 'sharp' | 'flat' | 'indication' | 'eraser'
+        self.crayon_color = '#e74c3c'
+        self.crayon_size = 4
         self.spread_view = False
-        self.spread_slots = []
-        self.active_slot = None
-        self.current_tk_images = []
 
-        # Variables pour les outils de dessin
-        self.drawing = False
-        self.last_x = None
-        self.last_y = None
-        self.active_tool = None
-        self.current_drawing_path_index = None  # Index du tracé en cours
+        self._pixmap_cache = {}      # page -> QPixmap
+        self.page_rects = []         # [(page_num, QRectF scène)] pour les pages affichées
 
-        # Buffer pour optimiser le dessin du crayon
-        self.drawing_buffer = []  # Buffer pour les points en attente
-        self.buffer_timer = None  # Timer pour vider le buffer
+        # État du tracé en cours
+        self.stroke_active = False
+        self._stroke_points = []
+        self._stroke_page = None
+        self._stroke_rect = None
+        self._stroke_item = None
+        self._stroke_path = None
 
-        # Barre de menu
+        self.scene = QGraphicsScene()
+        self.scene.setBackgroundBrush(QColor(C['crust']))
+        self.view = SheetView(self)
+        self.view.setScene(self.scene)
+
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.view)
+        self.setCentralWidget(central)
+
         self.build_menu()
+        self.build_toolbar()
+        self.build_sidebar()
+        self.build_statusbar()
+        self.build_shortcuts()
 
-        # Canvas pour PDF et dessins - style moderne
-        canvas_frame = Frame(self.master, bg=self.colors['surface'], relief='solid', bd=1)
-        canvas_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(5, 10))
-        canvas_frame.grid_rowconfigure(0, weight=1)
-        canvas_frame.grid_columnconfigure(0, weight=1)
-
-        self.canvas = Canvas(
-            canvas_frame,
-            bg=self.colors['surface'],
-            highlightthickness=0,
-            relief='flat',
-            bd=0
-        )
-        self.canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-
-        # Variables pour l'état de l'outil actif
-        self.active_tool = None
-        self.tool_buttons = [
-            self.crayon_button, self.diese_button,
-            self.bemol_button, self.indication_button,
-            self.eraser_button
-        ]
-
-        # Lier les événements souris
-        self.canvas.bind("<ButtonPress-1>", self.on_canvas_press)
-        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
-        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
-        self.canvas.bind("<Motion>", self.on_mouse_motion)
-        self.canvas.bind("<ButtonPress-3>", self.on_pan_start)
-        self.canvas.bind("<B3-Motion>", self.on_pan_drag)
-        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)  # Windows / macOS
-        self.canvas.bind("<Button-4>", self.on_mouse_wheel)    # Linux molette haut
-        self.canvas.bind("<Button-5>", self.on_mouse_wheel)    # Linux molette bas
-        self.master.bind('<Configure>', self.on_window_resize)
-
-        # Raccourcis clavier
-        self.master.bind('<Control-z>', lambda e: self.undo())
-        self.master.bind('<Control-y>', lambda e: self.redo())
-        self.master.bind('<Control-Shift-Z>', lambda e: self.redo())
-        self.master.bind('<Control-o>', lambda e: self.load_pdf())
-        self.master.bind('<Control-s>', lambda e: self.save_annotations())
-        self.master.bind('<Control-plus>', lambda e: self.zoom_in())
-        self.master.bind('<Control-equal>', lambda e: self.zoom_in())
-        self.master.bind('<Control-minus>', lambda e: self.zoom_out())
-        self.master.bind('<Control-0>', lambda e: self.reset_zoom())
-        self.master.bind('<Left>', lambda e: self.prev_page())
-        self.master.bind('<Right>', lambda e: self.next_page())
-        self.master.bind('<Prior>', lambda e: self.prev_page())
-        self.master.bind('<Next>', lambda e: self.next_page())
-        self.master.bind('<Home>', lambda e: self.go_to_first_page())
-        self.master.bind('<End>', lambda e: self.go_to_last_page())
-        self.master.bind('<Escape>', lambda e: self.deactivate_tools())
-
-        # Optimisation pour le crayon - réduire la fréquence des événements
-        self.last_motion_time = 0
-
-        # Initialiser l'état des boutons de taille
-        self.update_size_buttons()
-        self.update_zoom_label()
+        self.show_placeholder()
 
     # ------------------------------------------------------------------
-    # Barre de menu / fichiers récents / export
+    # Construction de l'interface
     # ------------------------------------------------------------------
 
     def build_menu(self):
-        """Construit la barre de menu (Fichier / Édition / Affichage)"""
-        menubar = Menu(self.master)
+        bar = self.menuBar()
 
-        file_menu = Menu(menubar, tearoff=0)
-        file_menu.add_command(label="📁 Charger PDF...", command=self.load_pdf, accelerator="Ctrl+O")
-        self.recent_menu = Menu(file_menu, tearoff=0, postcommand=self.populate_recent_menu)
-        file_menu.add_cascade(label="🕘 Fichiers récents", menu=self.recent_menu)
-        file_menu.add_separator()
-        file_menu.add_command(label="📤 Exporter PDF annoté...", command=self.export_pdf)
-        file_menu.add_separator()
-        file_menu.add_command(label="Quitter", command=self.master.quit)
-        menubar.add_cascade(label="Fichier", menu=file_menu)
+        m_file = bar.addMenu("Fichier")
+        open_action = self._act("Ouvrir un PDF…", self.open_pdf_dialog, "Ctrl+O")
+        w_open = os.path.join(ASSETS_DIR, "w_open.png")
+        if os.path.exists(w_open):
+            open_action.setIcon(QIcon(w_open))
+        m_file.addAction(open_action)
+        self.recent_menu = m_file.addMenu("Fichiers récents")
+        self.recent_menu.aboutToShow.connect(self.populate_recent_menu)
+        m_file.addSeparator()
+        m_file.addAction(self._act("Sauvegarder les annotations", self.save_annotations, "Ctrl+S"))
+        m_file.addAction(self._act("Charger des annotations…", self.load_annotations_manually))
+        m_file.addSeparator()
+        m_file.addAction(self._act("Exporter le PDF annoté…", self.export_pdf, "Ctrl+E"))
+        m_file.addSeparator()
+        m_file.addAction(self._act("Quitter", self.close, "Ctrl+Q"))
 
-        edit_menu = Menu(menubar, tearoff=0)
-        edit_menu.add_command(label="↩ Annuler", command=self.undo, accelerator="Ctrl+Z")
-        edit_menu.add_command(label="↪ Rétablir", command=self.redo, accelerator="Ctrl+Y")
-        menubar.add_cascade(label="Édition", menu=edit_menu)
+        m_edit = bar.addMenu("Édition")
+        m_edit.addAction(self._act("Annuler", self.undo, "Ctrl+Z"))
+        m_edit.addAction(self._act("Rétablir", self.redo, "Ctrl+Y"))
+        m_edit.addSeparator()
+        m_edit.addAction(self._act("Effacer la page courante", self.clear_current_page))
 
-        view_menu = Menu(menubar, tearoff=0)
-        view_menu.add_command(label="🔍+ Zoom avant", command=self.zoom_in, accelerator="Ctrl++")
-        view_menu.add_command(label="🔍- Zoom arrière", command=self.zoom_out, accelerator="Ctrl+-")
-        view_menu.add_command(label="⟲ Réinitialiser le zoom", command=self.reset_zoom, accelerator="Ctrl+0")
-        view_menu.add_separator()
-        self.spread_view_var = BooleanVar(value=False)
-        view_menu.add_checkbutton(label="📖 Vue double page (à cheval)", variable=self.spread_view_var,
-                                   command=self.toggle_spread_view)
-        menubar.add_cascade(label="Affichage", menu=view_menu)
+        m_view = bar.addMenu("Affichage")
+        m_view.addAction(self._act("Zoom avant", self.zoom_in, "Ctrl++"))
+        m_view.addAction(self._act("Zoom arrière", self.zoom_out, "Ctrl+-"))
+        m_view.addAction(self._act("Ajuster à la fenêtre", self.fit_view, "Ctrl+0"))
+        m_view.addSeparator()
+        self.spread_action = QAction("Vue double page", self, checkable=True)
+        self.spread_action.setShortcut("Ctrl+D")
+        self.spread_action.toggled.connect(self.toggle_spread_view)
+        m_view.addAction(self.spread_action)
 
-        self.master.config(menu=menubar)
+    def _act(self, text, slot, shortcut=None):
+        action = QAction(text, self)
+        if shortcut:
+            action.setShortcut(QKeySequence(shortcut))
+        action.triggered.connect(slot)
+        return action
 
-    def populate_recent_menu(self):
-        """Recharge dynamiquement la liste des fichiers récents dans le menu"""
-        self.recent_menu.delete(0, 'end')
-        recents = recent_files.load_recent_files()
-        if not recents:
-            self.recent_menu.add_command(label="(aucun fichier récent)", state='disabled')
-            return
-        import os
-        for path in recents:
-            label = os.path.basename(path)
-            self.recent_menu.add_command(label=label, command=lambda p=path: self.open_pdf(p))
+    def build_toolbar(self):
+        tb = QToolBar()
+        tb.setMovable(False)
+        tb.setIconSize(QSize(18, 18))
+        self.addToolBar(Qt.TopToolBarArea, tb)
 
-    def export_pdf(self):
-        """Exporte le PDF courant avec toutes les annotations fusionnées"""
-        if not self.current_pdf_path:
-            messagebox.showwarning("Attention", "Veuillez d'abord charger un PDF.")
-            return
+        open_btn = QToolButton(text="Ouvrir", objectName="primary")
+        open_asset = os.path.join(ASSETS_DIR, "open.png")
+        open_btn.setIcon(QIcon(open_asset) if os.path.exists(open_asset)
+                         else painted_icon('folder', C['crust']))
+        open_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        open_btn.clicked.connect(self.open_pdf_dialog)
+        tb.addWidget(open_btn)
 
-        import os
-        default_name = os.path.splitext(os.path.basename(self.current_pdf_path))[0] + "_annote.pdf"
-        dest_path = filedialog.asksaveasfilename(
-            title="Exporter le PDF annoté",
-            defaultextension=".pdf",
-            initialfile=default_name,
-            filetypes=[("Fichiers PDF", "*.pdf")]
+        tb.addSeparator()
+
+        self.prev_btn = QToolButton(text="‹")
+        self.prev_btn.setToolTip("Page précédente (←)")
+        self.prev_btn.clicked.connect(self.prev_page)
+        tb.addWidget(self.prev_btn)
+
+        self.page_chip = QLabel("— / —", objectName="chip")
+        self.page_chip.setAlignment(Qt.AlignCenter)
+        self.page_chip.setMinimumWidth(86)
+        tb.addWidget(self.page_chip)
+
+        self.next_btn = QToolButton(text="›")
+        self.next_btn.setToolTip("Page suivante (→)")
+        self.next_btn.clicked.connect(self.next_page)
+        tb.addWidget(self.next_btn)
+
+        tb.addSeparator()
+
+        zo = QToolButton(text="−")
+        zo.setToolTip("Zoom arrière (Ctrl+-)")
+        zo.clicked.connect(self.zoom_out)
+        tb.addWidget(zo)
+
+        self.zoom_chip = QLabel("100 %", objectName="chip")
+        self.zoom_chip.setAlignment(Qt.AlignCenter)
+        self.zoom_chip.setMinimumWidth(70)
+        tb.addWidget(self.zoom_chip)
+
+        zi = QToolButton(text="+")
+        zi.setToolTip("Zoom avant (Ctrl++)")
+        zi.clicked.connect(self.zoom_in)
+        tb.addWidget(zi)
+
+        fit = QToolButton(text="Ajuster")
+        fit.setIcon(painted_icon('fit'))
+        fit.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        fit.setToolTip("Ajuster à la fenêtre (Ctrl+0)")
+        fit.clicked.connect(self.fit_view)
+        tb.addWidget(fit)
+
+        self.spread_btn = QToolButton(text="Double page")
+        self.spread_btn.setIcon(painted_icon('pages'))
+        self.spread_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.spread_btn.setCheckable(True)
+        self.spread_btn.setToolTip("Afficher deux pages côte à côte (Ctrl+D)")
+        self.spread_btn.toggled.connect(self.spread_action.setChecked)
+        tb.addWidget(self.spread_btn)
+
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        spacer.setStyleSheet("background: transparent;")
+        tb.addWidget(spacer)
+
+        save_btn = QToolButton(text="Sauver", objectName="success")
+        save_btn.setIcon(painted_icon('save', C['crust']))
+        save_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        save_btn.setToolTip("Sauvegarder les annotations (Ctrl+S)")
+        save_btn.clicked.connect(self.save_annotations)
+        tb.addWidget(save_btn)
+
+        export_btn = QToolButton(text="Exporter")
+        export_btn.setIcon(painted_icon('export'))
+        export_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        export_btn.setToolTip("Exporter le PDF annoté (Ctrl+E)")
+        export_btn.clicked.connect(self.export_pdf)
+        tb.addWidget(export_btn)
+
+    def build_sidebar(self):
+        sidebar = QFrame(objectName="sidebar")
+        sidebar.setFixedWidth(62)
+        lay = QVBoxLayout(sidebar)
+        lay.setContentsMargins(10, 14, 10, 14)
+        lay.setSpacing(8)
+        lay.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+
+        self.tool_group = QButtonGroup(self)
+        self.tool_group.setExclusive(False)  # géré manuellement pour permettre la désélection
+
+        self.tool_buttons = {}
+        tools = [
+            ('crayon', "✎", asset_icon("w_pen.png", "pen.png") or two_state_icon('pencil'),
+             "Crayon — dessin libre"),
+            ('sharp', "♯", two_state_icon('sharp'), "Ajouter un dièse"),
+            ('flat', "♭", two_state_icon('flat'), "Ajouter un bémol"),
+            ('indication', "T", asset_icon("w_text.png", "text.png"),
+             "Ajouter une indication texte"),
+            ('eraser', "⌫", asset_icon("w_eraser.png", "eraser.png") or two_state_icon('eraser'),
+             "Gomme — supprimer un élément"),
+        ]
+        for name, glyph, icon, tip in tools:
+            if icon is not None:
+                btn = QToolButton()
+                btn.setIcon(icon)
+                btn.setIconSize(QSize(24, 24))
+            else:
+                btn = QToolButton(text=glyph)
+            btn.setCheckable(True)
+            btn.setToolTip(tip)
+            if name == 'indication' and icon is None:
+                font = btn.font()
+                font.setItalic(True)
+                font.setBold(True)
+                btn.setFont(font)
+            btn.clicked.connect(lambda checked, n=name: self.set_tool(n if checked else None))
+            lay.addWidget(btn)
+            self.tool_buttons[name] = btn
+
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background: {C['surface0']};")
+        lay.addSpacing(4)
+        lay.addWidget(sep)
+        lay.addSpacing(4)
+
+        self.color_btn = QToolButton()
+        self.color_btn.setToolTip("Couleur du crayon")
+        self.color_btn.clicked.connect(self.choose_color)
+        self._refresh_color_button()
+        lay.addWidget(self.color_btn)
+
+        self.size_buttons = {}
+        for size, diameter in [(2, 5), (4, 9), (6, 13)]:
+            btn = QToolButton()
+            btn.setCheckable(True)
+            btn.setIcon(circle_icon(diameter))
+            btn.setToolTip(f"Épaisseur du trait : {size} pt")
+            btn.clicked.connect(lambda checked, s=size: self.set_crayon_size(s))
+            lay.addWidget(btn)
+            self.size_buttons[size] = btn
+        self.size_buttons[self.crayon_size].setChecked(True)
+
+        lay.addStretch()
+
+        clear_btn = QToolButton()
+        clear_btn.setIcon(painted_icon('trash', C['red']))
+        clear_btn.setIconSize(QSize(22, 22))
+        clear_btn.setToolTip("Effacer toutes les annotations de la page")
+        clear_btn.clicked.connect(self.clear_current_page)
+        lay.addWidget(clear_btn)
+
+        central = self.centralWidget()
+        wrapper = QWidget()
+        hbox = QHBoxLayout(wrapper)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(0)
+        hbox.addWidget(sidebar)
+        hbox.addWidget(central)
+        self.setCentralWidget(wrapper)
+
+    def build_statusbar(self):
+        sb = self.statusBar()
+        self.hint_label = QLabel("Ouvrez une partition pour commencer  •  Ctrl+O")
+        sb.addWidget(self.hint_label)
+        shortcut_label = QLabel("molette : zoom   •   clic droit : déplacer   •   Échap : désélectionner l'outil")
+        sb.addPermanentWidget(shortcut_label)
+
+    def build_shortcuts(self):
+        QShortcut(QKeySequence(Qt.Key_Left), self, activated=self.prev_page)
+        QShortcut(QKeySequence(Qt.Key_Right), self, activated=self.next_page)
+        QShortcut(QKeySequence(Qt.Key_PageUp), self, activated=self.prev_page)
+        QShortcut(QKeySequence(Qt.Key_PageDown), self, activated=self.next_page)
+        QShortcut(QKeySequence(Qt.Key_Home), self, activated=self.go_first)
+        QShortcut(QKeySequence(Qt.Key_End), self, activated=self.go_last)
+        QShortcut(QKeySequence(Qt.Key_Escape), self, activated=lambda: self.set_tool(None))
+        QShortcut(QKeySequence("Ctrl+Shift+Z"), self, activated=self.redo)
+
+    # ------------------------------------------------------------------
+    # Outils
+    # ------------------------------------------------------------------
+
+    def set_tool(self, tool):
+        self.active_tool = tool
+        for name, btn in self.tool_buttons.items():
+            btn.setChecked(name == tool)
+        hints = {
+            None: "Aucun outil  •  cliquer-glisser pour déplacer la vue",
+            'crayon': "Crayon  •  dessinez directement sur la partition",
+            'sharp': "Dièse  •  cliquez à l'endroit voulu",
+            'flat': "Bémol  •  cliquez à l'endroit voulu",
+            'indication': "Indication  •  cliquez puis saisissez le texte",
+            'eraser': "Gomme  •  cliquez sur un élément pour le supprimer",
+        }
+        self.hint_label.setText(hints.get(tool, ""))
+        self.apply_tool_cursor()
+
+    def apply_tool_cursor(self):
+        cursors = {
+            None: Qt.OpenHandCursor if self.current_pdf_path else Qt.ArrowCursor,
+            'crayon': Qt.CrossCursor,
+            'sharp': Qt.CrossCursor,
+            'flat': Qt.CrossCursor,
+            'indication': Qt.IBeamCursor,
+            'eraser': Qt.PointingHandCursor,
+        }
+        self.view.setCursor(cursors.get(self.active_tool, Qt.ArrowCursor))
+
+    def choose_color(self):
+        color = QColorDialog.getColor(QColor(self.crayon_color), self, "Couleur du crayon")
+        if color.isValid():
+            self.crayon_color = color.name()
+            self._refresh_color_button()
+
+    def _refresh_color_button(self):
+        self.color_btn.setStyleSheet(
+            f"QToolButton {{ background-color: {self.crayon_color}; border-radius: 11px; }}"
+            f"QToolButton:hover {{ border: 2px solid {C['text']}; }}"
         )
-        if not dest_path:
-            return
 
-        try:
-            export_annotated_pdf(self.current_pdf_path, dest_path, self.music_notation, self.annotation_manager)
-            messagebox.showinfo("Export réussi", f"PDF annoté exporté :\n{dest_path}")
-        except Exception as e:
-            messagebox.showerror("Erreur d'export", f"Impossible d'exporter le PDF :\n{e}")
+    def set_crayon_size(self, size):
+        self.crayon_size = size
+        for s, btn in self.size_buttons.items():
+            btn.setChecked(s == size)
 
     # ------------------------------------------------------------------
-    # Chargement de PDF
-    # ------------------------------------------------------------------
-
-    def load_pdf(self):
-        file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
-        if file_path:
-            self.open_pdf(file_path)
-
-    def open_pdf(self, file_path):
-        """Ouvre un PDF (depuis le sélecteur de fichier ou les fichiers récents)"""
-        # D'abord effacer toutes les annotations existantes
-        self.clear_all_annotations()
-        self.history_manager.clear()
-        self.zoom_level = 1.0
-        self.pan_x = 0
-        self.pan_y = 0
-
-        # Ensuite charger le nouveau PDF
-        self.current_pdf_path = file_path
-        self.pdf_viewer.load_pdf(file_path)
-
-        # Puis chercher et charger les annotations correspondantes
-        self.load_existing_annotations()
-        recent_files.add_recent_file(file_path)
-        self.update_zoom_label()
-        self.render_pdf_with_annotations()
-
-    def clear_all_annotations(self):
-        """Efface toutes les annotations de toutes les pages"""
-        # Effacer les notations musicales
-        self.music_notation.clear_notation()
-
-        # Effacer les annotations générales
-        self.annotation_manager.annotations.clear()
-        self.annotation_manager.page_annotations.clear()
-
-        print("Toutes les annotations ont été effacées.")
-
-    def load_existing_annotations(self):
-        """Charge les annotations existantes si elles existent"""
-        if not self.current_pdf_path:
-            return
-
-        import json
-        import os
-
-        # Dossier central pour toutes les annotations
-        annotations_dir = os.path.join(os.path.expanduser("~"), "Documents", "Arpège", "annotations")
-
-        # Rechercher le fichier d'annotations
-        pdf_name = os.path.splitext(os.path.basename(self.current_pdf_path))[0]
-        annotations_file = os.path.join(annotations_dir, f"{pdf_name}_annotations.json")
-
-        if not os.path.exists(annotations_file):
-            print(f"Aucune annotation existante trouvée pour {pdf_name}.")
-            return
-
-        try:
-            with open(annotations_file, 'r', encoding='utf-8') as f:
-                save_data = json.load(f)
-
-            # Charger les annotations même si le chemin du PDF a changé
-            # (on se base sur le nom du fichier plutôt que sur le chemin complet)
-            saved_pdf_name = save_data.get('pdf_name', os.path.splitext(os.path.basename(save_data.get('pdf_file', '')))[0])
-            if saved_pdf_name != pdf_name:
-                print("Le fichier d'annotations ne correspond pas au PDF chargé.")
-                return
-
-            # Charger les annotations
-            annotations_data = save_data.get('annotations', {})
-
-            # Restaurer les notations musicales
-            music_notations = annotations_data.get('music_notations', [])
-            self.music_notation.annotations = music_notations
-
-            # Restaurer les tracés
-            drawings = annotations_data.get('drawings', {})
-            # Convertir les clés de chaînes en entiers pour les numéros de page
-            # Et s'assurer que le format est correct (liste de tracés)
-            self.music_notation.drawing_paths = {}
-            for page_str, drawing_data in drawings.items():
-                page_num = int(page_str)
-                # Vérifier le format des données de dessin
-                if isinstance(drawing_data, list):
-                    # Si c'est une liste simple de points (ancien format), la convertir
-                    if drawing_data and isinstance(drawing_data[0], dict) and 'relative_x' in drawing_data[0]:
-                        # Ancien format : liste de points
-                        self.music_notation.drawing_paths[page_num] = [drawing_data] if drawing_data else []
-                    else:
-                        # Nouveau format : liste de tracés
-                        self.music_notation.drawing_paths[page_num] = drawing_data
-                else:
-                    self.music_notation.drawing_paths[page_num] = []
-
-            # Restaurer les annotations générales
-            general_annotations = annotations_data.get('general_annotations', [])
-            self.annotation_manager.annotations = general_annotations
-
-            # Reconstruire le dictionnaire par page pour AnnotationManager
-            self.annotation_manager.page_annotations = {}
-            for annotation in general_annotations:
-                page_num = annotation.get('page', 0)
-                if page_num not in self.annotation_manager.page_annotations:
-                    self.annotation_manager.page_annotations[page_num] = []
-                self.annotation_manager.page_annotations[page_num].append(annotation)
-
-            print(f"Annotations chargées depuis : {annotations_file}")
-
-        except Exception as e:
-            print(f"Erreur lors du chargement des annotations : {e}")
-            messagebox.showwarning("Avertissement", f"Impossible de charger les annotations :\n{e}")
-
-    def load_annotations_manually(self):
-        """Permet de charger manuellement un fichier d'annotations"""
-        if not self.current_pdf_path:
-            messagebox.showwarning("Attention", "Veuillez d'abord charger un PDF.")
-            return
-
-        # Dossier central pour les annotations
-        import os
-        annotations_dir = os.path.join(os.path.expanduser("~"), "Documents", "Arpège", "annotations")
-
-        # Créer le dossier s'il n'existe pas
-        if not os.path.exists(annotations_dir):
-            os.makedirs(annotations_dir)
-
-        annotations_file = filedialog.askopenfilename(
-            title="Charger les annotations",
-            initialdir=annotations_dir,
-            filetypes=[("Fichiers JSON", "*.json"), ("Tous les fichiers", "*.*")]
-        )
-
-        if not annotations_file:
-            return
-
-        import json
-        try:
-            with open(annotations_file, 'r', encoding='utf-8') as f:
-                save_data = json.load(f)
-
-            self.push_history()
-
-            # Charger les annotations
-            annotations_data = save_data.get('annotations', {})
-
-            # Restaurer les notations musicales
-            music_notations = annotations_data.get('music_notations', [])
-            self.music_notation.annotations = music_notations
-
-            # Restaurer les tracés
-            drawings = annotations_data.get('drawings', {})
-            # Convertir et s'assurer du bon format
-            self.music_notation.drawing_paths = {}
-            for page_str, drawing_data in drawings.items():
-                page_num = int(page_str)
-                if isinstance(drawing_data, list):
-                    # Si c'est une liste simple de points (ancien format), la convertir
-                    if drawing_data and isinstance(drawing_data[0], dict) and 'relative_x' in drawing_data[0]:
-                        # Ancien format : liste de points
-                        self.music_notation.drawing_paths[page_num] = [drawing_data] if drawing_data else []
-                    else:
-                        # Nouveau format : liste de tracés
-                        self.music_notation.drawing_paths[page_num] = drawing_data
-                else:
-                    self.music_notation.drawing_paths[page_num] = []
-
-            # Restaurer les annotations générales
-            general_annotations = annotations_data.get('general_annotations', [])
-            self.annotation_manager.annotations = general_annotations
-
-            # Reconstruire le dictionnaire par page
-            self.annotation_manager.page_annotations = {}
-            for annotation in general_annotations:
-                page_num = annotation.get('page', 0)
-                if page_num not in self.annotation_manager.page_annotations:
-                    self.annotation_manager.page_annotations[page_num] = []
-                self.annotation_manager.page_annotations[page_num].append(annotation)
-
-            # Redessiner la page avec les nouvelles annotations
-            self.render_pdf_with_annotations()
-
-            messagebox.showinfo("Succès", f"Annotations chargées depuis :\n{annotations_file}")
-
-        except Exception as e:
-            messagebox.showerror("Erreur", f"Impossible de charger le fichier d'annotations :\n{e}")
-
-    # ------------------------------------------------------------------
-    # Historique (undo / redo)
+    # Historique
     # ------------------------------------------------------------------
 
     def _get_state_refs(self):
@@ -555,465 +791,135 @@ class MusicSheetEditor:
         self.annotation_manager.page_annotations = state['page_annotations']
 
     def push_history(self):
-        """À appeler juste avant toute modification des annotations/tracés"""
         self.history_manager.push(self._get_state_refs())
 
     def undo(self):
         if not self.history_manager.can_undo():
-            print("↩ Rien à annuler")
             return
-        prev_state = self.history_manager.undo(self._get_state_refs())
-        if prev_state is not None:
-            self._apply_state(prev_state)
-            self.render_pdf_with_annotations()
-            print("↩ Annulation effectuée")
+        state = self.history_manager.undo(self._get_state_refs())
+        if state is not None:
+            self._apply_state(state)
+            self.rebuild_scene(preserve_view=True)
 
     def redo(self):
         if not self.history_manager.can_redo():
-            print("↪ Rien à rétablir")
             return
-        next_state = self.history_manager.redo(self._get_state_refs())
-        if next_state is not None:
-            self._apply_state(next_state)
-            self.render_pdf_with_annotations()
-            print("↪ Rétablissement effectué")
+        state = self.history_manager.redo(self._get_state_refs())
+        if state is not None:
+            self._apply_state(state)
+            self.rebuild_scene(preserve_view=True)
 
     # ------------------------------------------------------------------
-    # Zoom / Pan
+    # Chargement / sauvegarde
     # ------------------------------------------------------------------
 
-    def update_zoom_label(self):
-        self.zoom_label.configure(text=f"{int(round(self.zoom_level * 100))}%")
+    def open_pdf_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Ouvrir une partition", "",
+                                              "Fichiers PDF (*.pdf)")
+        if path:
+            self.open_pdf(path)
 
-    def reset_zoom(self):
-        self.zoom_level = 1.0
-        self.pan_x = 0
-        self.pan_y = 0
-        self.update_zoom_label()
-        self.render_pdf_with_annotations()
+    def open_pdf(self, path):
+        self.music_notation.clear_notation()
+        self.annotation_manager.annotations.clear()
+        self.annotation_manager.page_annotations.clear()
+        self.history_manager.clear()
+        self._pixmap_cache.clear()
 
-    def zoom_in(self):
-        self.apply_zoom(ZOOM_STEP)
+        self.current_pdf_path = path
+        self.pdf_viewer.load_pdf(path)
+        self.load_existing_annotations()
+        recent_files.add_recent_file(path)
 
-    def zoom_out(self):
-        self.apply_zoom(1 / ZOOM_STEP)
+        self.rebuild_scene()
+        self.fit_view()
+        self.set_tool(None)
+        name = os.path.basename(path)
+        self.setWindowTitle(f"Arpège — {name}")
+        self.hint_label.setText(f"{name}  •  {self.pdf_viewer.page_count} pages")
 
-    def apply_zoom(self, factor, cursor_x=None, cursor_y=None):
-        """Applique un facteur de zoom en gardant le point sous le curseur fixe"""
-        if self.spread_view or not self.current_pdf_path:
+    def populate_recent_menu(self):
+        self.recent_menu.clear()
+        recents = recent_files.load_recent_files()
+        if not recents:
+            action = self.recent_menu.addAction("(aucun fichier récent)")
+            action.setEnabled(False)
             return
+        for path in recents:
+            action = self.recent_menu.addAction(os.path.basename(path))
+            action.triggered.connect(lambda checked=False, p=path: self.open_pdf(p))
 
-        old_zoom = self.zoom_level
-        new_zoom = max(ZOOM_MIN, min(ZOOM_MAX, old_zoom * factor))
-        if abs(new_zoom - old_zoom) < 1e-6:
+    def _annotations_dir(self):
+        path = os.path.join(os.path.expanduser("~"), "Documents", "Arpège", "annotations")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _annotations_file(self):
+        pdf_name = os.path.splitext(os.path.basename(self.current_pdf_path))[0]
+        return os.path.join(self._annotations_dir(), f"{pdf_name}_annotations.json")
+
+    def load_existing_annotations(self):
+        if not self.current_pdf_path:
             return
-
-        canvas_width = self.canvas.winfo_width() or 1100
-        canvas_height = self.canvas.winfo_height() or 800
-        if cursor_x is None:
-            cursor_x = canvas_width / 2
-        if cursor_y is None:
-            cursor_y = canvas_height / 2
-
-        # Fraction (0..1) de la partition sous le curseur avant le changement de zoom
-        if self.pdf_display_width > 0 and self.pdf_display_height > 0:
-            fx = (cursor_x - self.pdf_display_x) / self.pdf_display_width
-            fy = (cursor_y - self.pdf_display_y) / self.pdf_display_height
-        else:
-            fx, fy = 0.5, 0.5
-
-        self.zoom_level = new_zoom
-
-        if self.pdf_display_width > 0 and self.base_scale > 0:
-            img_width = self.pdf_display_width / (self.base_scale * old_zoom)
-            img_height = self.pdf_display_height / (self.base_scale * old_zoom)
-            new_scale = self.base_scale * new_zoom
-            new_width = img_width * new_scale
-            new_height = img_height * new_scale
-            base_x = (canvas_width - new_width) / 2
-            base_y = (canvas_height - new_height) / 2
-            self.pan_x = cursor_x - fx * new_width - base_x
-            self.pan_y = cursor_y - fy * new_height - base_y
-
-        self.update_zoom_label()
-        self.render_pdf_with_annotations()
-
-    def on_mouse_wheel(self, event):
-        if self.spread_view or not self.current_pdf_path:
+        annotations_file = self._annotations_file()
+        if not os.path.exists(annotations_file):
             return
-        delta = getattr(event, 'delta', 0)
-        if delta:
-            factor = ZOOM_STEP if delta > 0 else 1 / ZOOM_STEP
-        elif getattr(event, 'num', None) == 4:
-            factor = ZOOM_STEP
-        elif getattr(event, 'num', None) == 5:
-            factor = 1 / ZOOM_STEP
-        else:
-            return
-        self.apply_zoom(factor, event.x, event.y)
+        try:
+            with open(annotations_file, 'r', encoding='utf-8') as f:
+                save_data = json.load(f)
+            self._restore_annotations(save_data)
+        except Exception as e:
+            QMessageBox.warning(self, "Avertissement",
+                                f"Impossible de charger les annotations :\n{e}")
 
-    def on_pan_start(self, event):
-        if self.spread_view:
-            return
-        self.pan_start_x = event.x
-        self.pan_start_y = event.y
-        self.pan_origin_x = self.pan_x
-        self.pan_origin_y = self.pan_y
+    def _restore_annotations(self, save_data):
+        annotations_data = save_data.get('annotations', {})
+        self.music_notation.annotations = annotations_data.get('music_notations', [])
 
-    def on_pan_drag(self, event):
-        if self.spread_view or self.pan_start_x is None:
-            return
-        dx = event.x - self.pan_start_x
-        dy = event.y - self.pan_start_y
-        self.pan_x = self.pan_origin_x + dx
-        self.pan_y = self.pan_origin_y + dy
-        self.render_pdf_with_annotations()
-
-    # ------------------------------------------------------------------
-    # Vue double page ("à cheval")
-    # ------------------------------------------------------------------
-
-    def toggle_spread_view(self):
-        self.spread_view = self.spread_view_var.get()
-        self.zoom_level = 1.0
-        self.pan_x = 0
-        self.pan_y = 0
-        self.update_zoom_label()
-        self.render_pdf_with_annotations()
-
-    def _fit_image_in_box(self, pil_image, box_x, box_y, box_w, box_h, page_num):
-        img_w, img_h = pil_image.size
-        if box_w <= 0 or box_h <= 0 or img_w <= 0 or img_h <= 0:
-            return None
-        scale = min(box_w / img_w, box_h / img_h)
-        new_w, new_h = max(1, int(img_w * scale)), max(1, int(img_h * scale))
-        x = box_x + (box_w - new_w) / 2
-        y = box_y + (box_h - new_h) / 2
-        resized = pil_image.resize((new_w, new_h), resample=3)
-        return {'page': page_num, 'x': x, 'y': y, 'width': new_w, 'height': new_h, 'image': resized}
-
-    def find_slot_at(self, x, y):
-        for slot in self.spread_slots:
-            if slot['x'] <= x <= slot['x'] + slot['width'] and slot['y'] <= y <= slot['y'] + slot['height']:
-                return slot
-        return None
-
-    # ------------------------------------------------------------------
-    # Calcul des dimensions d'affichage (mode page unique)
-    # ------------------------------------------------------------------
-
-    def calculate_pdf_dimensions(self):
-        """Calcule et met à jour les dimensions d'affichage de la partition (page unique)"""
-        pil_image = self.pdf_viewer.render_page()
-        if not pil_image:
-            return None
-
-        # Obtenir les dimensions du canvas
-        canvas_width = self.canvas.winfo_width()
-        canvas_height = self.canvas.winfo_height()
-
-        # Si les dimensions ne sont pas encore disponibles, utiliser les dimensions par défaut
-        if canvas_width <= 1 or canvas_height <= 1:
-            self.master.update_idletasks()
-            canvas_width = self.canvas.winfo_width()
-            canvas_height = self.canvas.winfo_height()
-
-        # Dimensions par défaut si toujours pas disponibles
-        if canvas_width <= 1 or canvas_height <= 1:
-            canvas_width = 1100
-            canvas_height = 800
-
-        # Calculer le ratio pour maintenir les proportions
-        img_width, img_height = pil_image.size
-
-        # Marges pour laisser un peu d'espace
-        margin = 20
-        max_width = canvas_width - (margin * 2)
-        max_height = canvas_height - (margin * 2)
-
-        # Calculer le facteur d'échelle pour que l'image tienne dans le canvas (zoom 100%)
-        scale_width = max_width / img_width
-        scale_height = max_height / img_height
-        fit_scale = min(scale_width, scale_height)
-        self.base_scale = fit_scale
-
-        # Appliquer le niveau de zoom utilisateur
-        scale = fit_scale * self.zoom_level
-
-        # Nouvelles dimensions
-        new_width = int(img_width * scale)
-        new_height = int(img_height * scale)
-
-        # Centrer l'image dans le canvas, puis appliquer le décalage de panoramique
-        base_x = (canvas_width - new_width) // 2
-        base_y = (canvas_height - new_height) // 2
-        x = base_x + int(self.pan_x)
-        y = base_y + int(self.pan_y)
-
-        # Mettre à jour les variables de dimensions
-        self.pdf_display_x = x
-        self.pdf_display_y = y
-        self.pdf_display_width = new_width
-        self.pdf_display_height = new_height
-
-        # Redimensionner l'image
-        pil_image = pil_image.resize((new_width, new_height), resample=3)
-        return pil_image, x, y, canvas_width, canvas_height
-
-    # ------------------------------------------------------------------
-    # Rendu
-    # ------------------------------------------------------------------
-
-    def render_pdf_with_annotations(self):
-        """Rend le PDF (page unique ou double page) avec toutes les annotations"""
-        self.canvas.delete("all")
-
-        if not self.pdf_viewer.pdf_document:
-            canvas_width = self.canvas.winfo_width() or 1100
-            canvas_height = self.canvas.winfo_height() or 800
-            self.canvas.create_text(canvas_width//2, canvas_height//2,
-                                   text="📄 Aucun PDF chargé\n\nCliquez sur 'Charger PDF' pour commencer",
-                                   font=self.fonts['title'],
-                                   fill=self.colors['text_light'],
-                                   justify='center')
-            return
-
-        if self.spread_view:
-            self.render_spread_view()
-        else:
-            self.render_single_page_view()
-
-    def render_single_page_view(self):
-        result = self.calculate_pdf_dimensions()
-        if not result:
-            canvas_width = self.canvas.winfo_width() or 1100
-            canvas_height = self.canvas.winfo_height() or 800
-            self.canvas.create_text(canvas_width//2, canvas_height//2,
-                                   text="📄 Aucun PDF chargé\n\nCliquez sur 'Charger PDF' pour commencer",
-                                   font=self.fonts['title'],
-                                   fill=self.colors['text_light'],
-                                   justify='center')
-            return
-
-        pil_image, x, y, canvas_width, canvas_height = result
-
-        # Afficher l'image du PDF
-        self.current_tk_image = ImageTk.PhotoImage(pil_image)
-        self.canvas.create_image(x, y, anchor="nw", image=self.current_tk_image)
-
-        # Affichage moderne du numéro de page avec fond
-        page_text = f"Page {self.pdf_viewer.current_page+1}/{self.pdf_viewer.page_count}"
-
-        # Créer un fond pour le texte de la page
-        self.canvas.create_rectangle(
-            canvas_width - 120, 10,
-            canvas_width - 10, 35,
-            fill=self.colors['primary'],
-            outline="",
-            width=0
-        )
-
-        self.canvas.create_text(canvas_width - 65, 22.5,
-                               text=page_text,
-                               font=self.fonts['button'],
-                               fill="white",
-                               anchor="center")
-
-        # Ajouter des flèches de navigation inclinées sur les côtés
-        arrow_size = 40
-        arrow_y = canvas_height // 2
-
-        # Flèche gauche (page précédente) - triangle incliné vers la gauche
-        if self.pdf_viewer.current_page > 0:
-            # Triangle pointant vers la gauche ◤
-            left_arrow_points = [
-                30, arrow_y - arrow_size//2,  # Point haut
-                30, arrow_y + arrow_size//2,  # Point bas
-                30 - arrow_size//2, arrow_y   # Point gauche
-            ]
-            self.left_arrow_id = self.canvas.create_polygon(
-                left_arrow_points,
-                fill=self.colors['secondary'],
-                outline=self.colors['primary'],
-                width=2,
-                tags="nav_arrow"
-            )
-            # Texte "◄" au centre
-            self.canvas.create_text(30 - arrow_size//4, arrow_y,
-                                   text="◄",
-                                   font=("Arial", 20, "bold"),
-                                   fill="white",
-                                   tags="nav_arrow")
-
-        # Flèche droite (page suivante) - triangle incliné vers la droite
-        if self.pdf_viewer.current_page < self.pdf_viewer.page_count - 1:
-            # Triangle pointant vers la droite ◥
-            right_arrow_points = [
-                canvas_width - 30, arrow_y - arrow_size//2,  # Point haut
-                canvas_width - 30, arrow_y + arrow_size//2,  # Point bas
-                canvas_width - 30 + arrow_size//2, arrow_y   # Point droit
-            ]
-            self.right_arrow_id = self.canvas.create_polygon(
-                right_arrow_points,
-                fill=self.colors['secondary'],
-                outline=self.colors['primary'],
-                width=2,
-                tags="nav_arrow"
-            )
-            # Texte "►" au centre
-            self.canvas.create_text(canvas_width - 30 + arrow_size//4, arrow_y,
-                                   text="►",
-                                   font=("Arial", 20, "bold"),
-                                   fill="white",
-                                   tags="nav_arrow")
-
-        # Redessiner toutes les annotations de la page courante
-        self.redraw_annotations(self.pdf_viewer.current_page, self.pdf_display_x, self.pdf_display_y,
-                                 self.pdf_display_width, self.pdf_display_height)
-
-    def render_spread_view(self):
-        """Affiche deux pages côte à côte (vue 'à cheval' pour les tourneurs de page)"""
-        canvas_width = self.canvas.winfo_width() or 1100
-        canvas_height = self.canvas.winfo_height() or 800
-
-        left_page_num = self.pdf_viewer.current_page
-        right_page_num = left_page_num + 1 if left_page_num + 1 < self.pdf_viewer.page_count else None
-
-        margin = 15
-        gap = 20
-        half_width = (canvas_width - margin * 2 - gap) / 2
-        box_height = canvas_height - margin * 2
-
-        self.spread_slots = []
-        self.current_tk_images = []
-
-        left_image = self.pdf_viewer.render_page(left_page_num)
-        if left_image:
-            slot = self._fit_image_in_box(left_image, margin, margin, half_width, box_height, left_page_num)
-            if slot:
-                tk_img = ImageTk.PhotoImage(slot['image'])
-                self.current_tk_images.append(tk_img)
-                self.canvas.create_image(slot['x'], slot['y'], anchor="nw", image=tk_img)
-                self.spread_slots.append(slot)
-
-        if right_page_num is not None:
-            right_image = self.pdf_viewer.render_page(right_page_num)
-            if right_image:
-                slot = self._fit_image_in_box(right_image, margin * 2 + half_width + gap, margin,
-                                               half_width, box_height, right_page_num)
-                if slot:
-                    tk_img = ImageTk.PhotoImage(slot['image'])
-                    self.current_tk_images.append(tk_img)
-                    self.canvas.create_image(slot['x'], slot['y'], anchor="nw", image=tk_img)
-                    self.spread_slots.append(slot)
-
-        # Étiquette de pages
-        page_text = f"Pages {left_page_num + 1}"
-        page_text += f"-{right_page_num + 1}" if right_page_num is not None else ""
-        page_text += f" / {self.pdf_viewer.page_count}"
-
-        self.canvas.create_rectangle(canvas_width - 150, 10, canvas_width - 10, 35,
-                                      fill=self.colors['primary'], outline="", width=0)
-        self.canvas.create_text(canvas_width - 80, 22.5, text=page_text,
-                                 font=self.fonts['button'], fill="white", anchor="center")
-
-        for slot in self.spread_slots:
-            self.redraw_annotations(slot['page'], slot['x'], slot['y'], slot['width'], slot['height'])
-
-    def redraw_annotations(self, page_number, x, y, width, height):
-        """Redessine les annotations d'une page donnée dans le rectangle d'affichage fourni"""
-        # Redessiner les notations musicales
-        notations = self.music_notation.get_page_notations(page_number)
-        for notation in notations:
-            abs_x, abs_y = self.annotation_manager.relative_to_absolute(
-                notation['relative_x'], notation['relative_y'], x, y, width, height
-            )
-
-            if notation['type'] == 'sharp':
-                canvas_id = self.canvas.create_text(abs_x, abs_y, text="♯",
-                                                   font=(self.fonts['button'][0], 24, "bold"),
-                                                   fill=self.colors['accent'])
-            elif notation['type'] == 'flat':
-                canvas_id = self.canvas.create_text(abs_x, abs_y, text="♭",
-                                                   font=(self.fonts['button'][0], 24, "bold"),
-                                                   fill=self.colors['accent'])
-            elif notation['type'] == 'indication':
-                canvas_id = self.canvas.create_text(abs_x, abs_y, text=notation['text'],
-                                                   font=(self.fonts['button'][0], 16, "italic"),
-                                                   fill=self.colors['success'])
-
-            notation['canvas_id'] = canvas_id
-
-        # Redessiner les tracés avec leurs couleurs et tailles
-        drawing_paths = self.music_notation.get_page_drawings(page_number)
-        for path_data in drawing_paths:
-            # Gérer l'ancien format (liste simple) et le nouveau format (dict avec métadonnées)
-            if isinstance(path_data, list):
-                # Ancien format : liste de points
-                path_points = path_data
-                path_color = self.colors['primary']  # Couleur par défaut
-                path_size = 3  # Taille par défaut
+        drawings = annotations_data.get('drawings', {})
+        self.music_notation.drawing_paths = {}
+        for page_str, drawing_data in drawings.items():
+            page_num = int(page_str)
+            if isinstance(drawing_data, list):
+                if drawing_data and isinstance(drawing_data[0], dict) and 'relative_x' in drawing_data[0]:
+                    # Ancien format : liste simple de points
+                    self.music_notation.drawing_paths[page_num] = [drawing_data]
+                else:
+                    self.music_notation.drawing_paths[page_num] = drawing_data
             else:
-                # Nouveau format : dict avec points, couleur et taille
-                path_points = path_data.get('points', [])
-                path_color = path_data.get('color', self.colors['primary'])
-                path_size = path_data.get('size', 3)
+                self.music_notation.drawing_paths[page_num] = []
 
-            if len(path_points) > 1:
-                # Dessiner chaque segment du tracé
-                for i in range(len(path_points) - 1):
-                    point1 = path_points[i]
-                    point2 = path_points[i + 1]
+        general = annotations_data.get('general_annotations', [])
+        self.annotation_manager.annotations = general
+        self.annotation_manager.page_annotations = {}
+        for annotation in general:
+            page_num = annotation.get('page', 0)
+            self.annotation_manager.page_annotations.setdefault(page_num, []).append(annotation)
 
-                    abs_x1, abs_y1 = self.annotation_manager.relative_to_absolute(
-                        point1['relative_x'], point1['relative_y'], x, y, width, height
-                    )
-
-                    abs_x2, abs_y2 = self.annotation_manager.relative_to_absolute(
-                        point2['relative_x'], point2['relative_y'], x, y, width, height
-                    )
-
-                    self.canvas.create_line(
-                        abs_x1, abs_y1, abs_x2, abs_y2,
-                        fill=path_color,  # Utiliser la couleur sauvegardée
-                        width=path_size,  # Utiliser la taille sauvegardée
-                        capstyle='round',
-                        smooth=True
-                    )
-
-    def is_click_on_pdf(self, x, y):
-        """Vérifie si le clic est sur la partition (mode page unique)"""
-        return (self.pdf_display_x <= x <= self.pdf_display_x + self.pdf_display_width and
-                self.pdf_display_y <= y <= self.pdf_display_y + self.pdf_display_height)
-
-    def on_window_resize(self, event=None):
-        """Redessiner le PDF quand la fenêtre est redimensionnée"""
-        if hasattr(self, 'current_pdf_path') and self.current_pdf_path and event.widget == self.master:
-            # Délai pour éviter trop de redimensionnements
-            self.master.after(100, self.render_pdf_with_annotations)
+    def load_annotations_manually(self):
+        if not self.current_pdf_path:
+            QMessageBox.warning(self, "Attention", "Veuillez d'abord charger un PDF.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Charger des annotations",
+                                              self._annotations_dir(),
+                                              "Fichiers JSON (*.json)")
+        if not path:
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                save_data = json.load(f)
+            self.push_history()
+            self._restore_annotations(save_data)
+            self.rebuild_scene(preserve_view=True)
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur",
+                                 f"Impossible de charger le fichier d'annotations :\n{e}")
 
     def save_annotations(self):
-        """Sauvegarde toutes les annotations dans un fichier JSON"""
         if not self.current_pdf_path:
-            print("Aucun PDF chargé pour sauvegarder les annotations.")
+            QMessageBox.warning(self, "Attention", "Aucun PDF chargé.")
             return
-
-        import json
-        import os
-        from datetime import datetime
-
-        # Dossier central pour toutes les annotations
-        annotations_dir = os.path.join(os.path.expanduser("~"), "Documents", "Arpège", "annotations")
-
-        # Créer le dossier annotations s'il n'existe pas
-        if not os.path.exists(annotations_dir):
-            os.makedirs(annotations_dir)
-
-        # Créer le nom du fichier d'annotations basé sur le PDF
         pdf_name = os.path.splitext(os.path.basename(self.current_pdf_path))[0]
-        annotations_file = os.path.join(annotations_dir, f"{pdf_name}_annotations.json")
-
-        # Préparer les données à sauvegarder
         save_data = {
             'pdf_file': self.current_pdf_path,
             'pdf_name': pdf_name,
@@ -1023,214 +929,324 @@ class MusicSheetEditor:
             'annotations': {
                 'music_notations': self.music_notation.get_notations(),
                 'drawings': dict(self.music_notation.drawing_paths),
-                'general_annotations': self.annotation_manager.annotations
-            }
+                'general_annotations': self.annotation_manager.annotations,
+            },
         }
-
         try:
-            with open(annotations_file, 'w', encoding='utf-8') as f:
+            with open(self._annotations_file(), 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
-            print(f"Annotations sauvegardées dans : {annotations_file}")
-            messagebox.showinfo("Sauvegarde", f"Annotations sauvegardées !\n{annotations_file}")
+            self.hint_label.setText(f"Annotations sauvegardées  •  {self._annotations_file()}")
         except Exception as e:
-            print(f"Erreur lors de la sauvegarde : {e}")
-            messagebox.showerror("Erreur", f"Impossible de sauvegarder les annotations :\n{e}")
+            QMessageBox.critical(self, "Erreur", f"Impossible de sauvegarder :\n{e}")
+
+    def export_pdf(self):
+        if not self.current_pdf_path:
+            QMessageBox.warning(self, "Attention", "Veuillez d'abord charger un PDF.")
+            return
+        default_name = os.path.splitext(os.path.basename(self.current_pdf_path))[0] + "_annote.pdf"
+        path, _ = QFileDialog.getSaveFileName(self, "Exporter le PDF annoté",
+                                              default_name, "Fichiers PDF (*.pdf)")
+        if not path:
+            return
+        try:
+            export_annotated_pdf(self.current_pdf_path, path,
+                                 self.music_notation, self.annotation_manager)
+            self.hint_label.setText(f"PDF annoté exporté  •  {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur d'export", f"Impossible d'exporter :\n{e}")
+
+    # ------------------------------------------------------------------
+    # Navigation / zoom
+    # ------------------------------------------------------------------
 
     def prev_page(self):
-        self.pdf_viewer.previous_page()
-        self.pan_x = 0
-        self.pan_y = 0
-        self.render_pdf_with_annotations()
+        if self.pdf_viewer.pdf_document and self.pdf_viewer.current_page > 0:
+            self.pdf_viewer.current_page -= 1
+            self.rebuild_scene()
+            self.fit_view()
 
     def next_page(self):
-        self.pdf_viewer.next_page()
-        self.pan_x = 0
-        self.pan_y = 0
-        self.render_pdf_with_annotations()
+        if self.pdf_viewer.pdf_document and self.pdf_viewer.current_page < self.pdf_viewer.page_count - 1:
+            self.pdf_viewer.current_page += 1
+            self.rebuild_scene()
+            self.fit_view()
 
-    def go_to_first_page(self):
+    def go_first(self):
         if self.pdf_viewer.pdf_document:
             self.pdf_viewer.current_page = 0
-            self.pan_x = 0
-            self.pan_y = 0
-            self.render_pdf_with_annotations()
+            self.rebuild_scene()
+            self.fit_view()
 
-    def go_to_last_page(self):
+    def go_last(self):
         if self.pdf_viewer.pdf_document:
             self.pdf_viewer.current_page = self.pdf_viewer.page_count - 1
-            self.pan_x = 0
-            self.pan_y = 0
-            self.render_pdf_with_annotations()
+            self.rebuild_scene()
+            self.fit_view()
 
-    def clear_current_page(self):
-        """Efface toutes les annotations de la page courante"""
-        self.push_history()
-        current_page = self.pdf_viewer.current_page
-        self.music_notation.clear_page_notation(current_page)
-        self.annotation_manager.clear_page_annotations(current_page)
-        self.render_pdf_with_annotations()
+    def zoom_in(self):
+        if self.current_pdf_path and self.view.transform().m11() * ZOOM_STEP <= ZOOM_MAX:
+            self.view.scale(ZOOM_STEP, ZOOM_STEP)
+            self.update_zoom_chip()
 
-    def update_tool_buttons(self):
-        """Met à jour l'apparence des boutons d'outils pour montrer lequel est actif"""
-        active_style = {**self.tool_btn, 'bg': self.colors['secondary'], 'fg': 'white'}
-        inactive_style = self.tool_btn
+    def zoom_out(self):
+        if self.current_pdf_path and self.view.transform().m11() / ZOOM_STEP >= ZOOM_MIN:
+            self.view.scale(1 / ZOOM_STEP, 1 / ZOOM_STEP)
+            self.update_zoom_chip()
 
-        for button in self.tool_buttons:
-            button.configure(**inactive_style)
+    def fit_view(self):
+        if not self.scene.items():
+            return
+        rect = self.scene.itemsBoundingRect().adjusted(-30, -30, 30, 30)
+        self.view.fitInView(rect, Qt.KeepAspectRatio)
+        self.update_zoom_chip()
 
-        # Mettre en surbrillance le bouton actif
-        if self.active_tool == "crayon":
-            self.crayon_button.configure(**active_style)
-        elif self.active_tool == "sharp":
-            self.diese_button.configure(**active_style)
-        elif self.active_tool == "flat":
-            self.bemol_button.configure(**active_style)
-        elif self.active_tool == "indication":
-            self.indication_button.configure(**active_style)
-        elif self.active_tool == "eraser":
-            self.eraser_button.configure(**active_style)
+    def update_zoom_chip(self):
+        # Zoom affiché relatif à la résolution native du PDF (72 dpi)
+        scale = self.view.transform().m11() * RENDER_DPI / 72.0
+        self.zoom_chip.setText(f"{scale * 100:.0f} %")
 
-    def deactivate_tools(self):
-        """Désactive tous les outils et remet le curseur par défaut"""
-        self.active_tool = None
-        self.update_tool_buttons()
-        self.canvas.configure(cursor="arrow")
-        print("🔧 Tous les outils désactivés")
+    def toggle_spread_view(self, enabled):
+        self.spread_view = enabled
+        self.spread_btn.setChecked(enabled)
+        if self.current_pdf_path:
+            self.rebuild_scene()
+            self.fit_view()
 
-    def activate_crayon(self):
-        if self.active_tool == "crayon":
-            # Si le crayon est déjà actif, le désactiver
-            self.deactivate_tools()
+    # ------------------------------------------------------------------
+    # Rendu de la scène
+    # ------------------------------------------------------------------
+
+    def show_placeholder(self):
+        self.scene.clear()
+        self.page_rects = []
+        y = 0.0
+        logo_path = os.path.join(ASSETS_DIR, "Logo.png")
+        if os.path.exists(logo_path):
+            logo = QPixmap(logo_path).scaled(200, 200, Qt.KeepAspectRatio,
+                                             Qt.SmoothTransformation)
+            logo_item = self.scene.addPixmap(logo)
+            logo_item.setPos(-logo.width() / 2, y)
+            y += logo.height() + 30
+        text = self.scene.addSimpleText("Aucune partition ouverte — Ctrl+O pour ouvrir un PDF",
+                                        QFont("Segoe UI", 14))
+        text.setBrush(QColor(C['subtext']))
+        br = text.boundingRect()
+        text.setPos(-br.width() / 2, y)
+        self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-60, -60, 60, 60))
+        self.view.resetTransform()
+        self.view.centerOn(0, y / 2)
+        self.page_chip.setText("— / —")
+
+    def _page_pixmap(self, page_num):
+        if page_num in self._pixmap_cache:
+            return self._pixmap_cache[page_num]
+        page = self.pdf_viewer.pdf_document[page_num]
+        zoom = RENDER_DPI / 72.0
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+        image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(image.copy())
+        self._pixmap_cache[page_num] = pixmap
+        return pixmap
+
+    def rebuild_scene(self, preserve_view=False):
+        if not self.pdf_viewer.pdf_document:
+            self.show_placeholder()
+            return
+
+        if preserve_view:
+            saved_transform = self.view.transform()
+            saved_h = self.view.horizontalScrollBar().value()
+            saved_v = self.view.verticalScrollBar().value()
+
+        self.scene.clear()
+        self.page_rects = []
+
+        current = self.pdf_viewer.current_page
+        pages = [current]
+        if self.spread_view and current + 1 < self.pdf_viewer.page_count:
+            pages.append(current + 1)
+
+        x_offset = 0.0
+        for page_num in pages:
+            pixmap = self._page_pixmap(page_num)
+            item = self.scene.addPixmap(pixmap)
+            item.setPos(x_offset, 0)
+            shadow = QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(48)
+            shadow.setOffset(0, 10)
+            shadow.setColor(QColor(0, 0, 0, 200))
+            item.setGraphicsEffect(shadow)
+
+            rect = QRectF(x_offset, 0, pixmap.width(), pixmap.height())
+            self.page_rects.append((page_num, rect))
+            self._draw_page_annotations(page_num, rect)
+            x_offset += pixmap.width() + SPREAD_GAP
+
+        self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-80, -80, 80, 80))
+
+        if self.spread_view and len(pages) == 2:
+            self.page_chip.setText(f"{pages[0] + 1}-{pages[1] + 1} / {self.pdf_viewer.page_count}")
         else:
-            self.active_tool = "crayon"
-            self.update_tool_buttons()
-            self.canvas.configure(cursor="pencil")
-            print("🔧 Outil crayon activé")
+            self.page_chip.setText(f"{current + 1} / {self.pdf_viewer.page_count}")
 
-    def add_sharp(self):
-        if self.active_tool == "sharp":
-            # Si le dièse est déjà actif, le désactiver
-            self.deactivate_tools()
+        if preserve_view:
+            self.view.setTransform(saved_transform)
+            self.view.horizontalScrollBar().setValue(saved_h)
+            self.view.verticalScrollBar().setValue(saved_v)
+
+    def _draw_page_annotations(self, page_num, rect):
+        # Notations musicales (dièse, bémol, indication)
+        # Couleurs saturées identiques à l'export PDF (lisibles sur papier blanc)
+        symbol_color = QColor('#e74c3c')
+        indication_color = QColor('#27ae60')
+        symbol_font = QFont("DejaVu Sans")
+        symbol_font.setPixelSize(int(rect.height() * 0.034))
+        symbol_font.setBold(True)
+        text_font = QFont("Segoe UI")
+        text_font.setPixelSize(int(rect.height() * 0.022))
+        text_font.setItalic(True)
+
+        for notation in self.music_notation.get_page_notations(page_num):
+            x = rect.x() + notation['relative_x'] * rect.width()
+            y = rect.y() + notation['relative_y'] * rect.height()
+            if notation['type'] == 'sharp':
+                item = QGraphicsSimpleTextItem("♯")
+                item.setFont(symbol_font)
+                item.setBrush(symbol_color)
+            elif notation['type'] == 'flat':
+                item = QGraphicsSimpleTextItem("♭")
+                item.setFont(symbol_font)
+                item.setBrush(symbol_color)
+            elif notation['type'] == 'indication':
+                item = QGraphicsSimpleTextItem(notation.get('text', ''))
+                item.setFont(text_font)
+                item.setBrush(indication_color)
+            else:
+                continue
+            br = item.boundingRect()
+            item.setPos(x - br.width() / 2, y - br.height() / 2)
+            self.scene.addItem(item)
+
+        # Tracés au crayon
+        for path_data in self.music_notation.get_page_drawings(page_num):
+            if isinstance(path_data, list):
+                points, color, size = path_data, '#000000', 3
+            else:
+                points = path_data.get('points', [])
+                color = path_data.get('color', '#000000')
+                size = path_data.get('size', 3)
+            if len(points) < 2:
+                continue
+            path = QPainterPath()
+            first = points[0]
+            path.moveTo(rect.x() + first['relative_x'] * rect.width(),
+                        rect.y() + first['relative_y'] * rect.height())
+            for pt in points[1:]:
+                path.lineTo(rect.x() + pt['relative_x'] * rect.width(),
+                            rect.y() + pt['relative_y'] * rect.height())
+            item = QGraphicsPathItem(path)
+            item.setPen(self._stroke_pen(color, size, rect))
+            self.scene.addItem(item)
+
+    def _stroke_pen(self, color, size, rect):
+        """Épaisseur en points PDF convertie à l'échelle de la page rendue."""
+        width = size * rect.width() / 595.0
+        pen = QPen(QColor(color), width)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        return pen
+
+    # ------------------------------------------------------------------
+    # Événements canvas (délégués par SheetView)
+    # ------------------------------------------------------------------
+
+    def _locate(self, scene_pos):
+        """Retourne (page_num, rect, rel_x, rel_y) ou None si hors page."""
+        for page_num, rect in self.page_rects:
+            if rect.contains(scene_pos):
+                rel_x = (scene_pos.x() - rect.x()) / rect.width()
+                rel_y = (scene_pos.y() - rect.y()) / rect.height()
+                return page_num, rect, rel_x, rel_y
+        return None
+
+    def on_canvas_press(self, scene_pos):
+        located = self._locate(scene_pos)
+        if located is None:
+            return
+        page_num, rect, rel_x, rel_y = located
+
+        if self.active_tool == 'crayon':
+            self.push_history()
+            self.stroke_active = True
+            self._stroke_page = page_num
+            self._stroke_rect = rect
+            self._stroke_points = [{'relative_x': rel_x, 'relative_y': rel_y}]
+            self._stroke_path = QPainterPath(scene_pos)
+            self._stroke_item = QGraphicsPathItem(self._stroke_path)
+            self._stroke_item.setPen(self._stroke_pen(self.crayon_color, self.crayon_size, rect))
+            self.scene.addItem(self._stroke_item)
+
+        elif self.active_tool in ('sharp', 'flat'):
+            self.push_history()
+            if self.active_tool == 'sharp':
+                self.music_notation.add_sharp(page_num, rel_x, rel_y)
+            else:
+                self.music_notation.add_flat(page_num, rel_x, rel_y)
+            self.rebuild_scene(preserve_view=True)
+
+        elif self.active_tool == 'indication':
+            text, ok = QInputDialog.getText(self, "Indication musicale",
+                                            "Texte de l'indication :")
+            if ok and text.strip():
+                self.push_history()
+                self.music_notation.draw_indication(text.strip(), page_num, rel_x, rel_y)
+                self.rebuild_scene(preserve_view=True)
+
+        elif self.active_tool == 'eraser':
+            self.erase_at(page_num, rel_x, rel_y)
+
+    def on_canvas_move(self, scene_pos):
+        if not self.stroke_active or self._stroke_rect is None:
+            return
+        rect = self._stroke_rect
+        # Limiter le tracé à la page où il a commencé
+        x = min(max(scene_pos.x(), rect.left()), rect.right())
+        y = min(max(scene_pos.y(), rect.top()), rect.bottom())
+        self._stroke_path.lineTo(x, y)
+        self._stroke_item.setPath(self._stroke_path)
+        self._stroke_points.append({
+            'relative_x': (x - rect.x()) / rect.width(),
+            'relative_y': (y - rect.y()) / rect.height(),
+        })
+
+    def on_canvas_release(self):
+        if not self.stroke_active:
+            return
+        self.stroke_active = False
+        if len(self._stroke_points) > 1:
+            index = self.music_notation.start_new_drawing(
+                self._stroke_page, self.crayon_color, self.crayon_size)
+            for pt in self._stroke_points:
+                self.music_notation.add_drawing_point(
+                    self._stroke_page, pt['relative_x'], pt['relative_y'], index)
         else:
-            self.active_tool = "sharp"
-            self.update_tool_buttons()
-            self.canvas.configure(cursor="crosshair")
-            print("🔧 Outil dièse activé")
+            # Tracé vide : annuler l'entrée d'historique superflue
+            self.history_manager.undo_stack.pop()
+            if self._stroke_item is not None:
+                self.scene.removeItem(self._stroke_item)
+        self._stroke_points = []
+        self._stroke_item = None
+        self._stroke_path = None
+        self._stroke_page = None
+        self._stroke_rect = None
 
-    def add_flat(self):
-        if self.active_tool == "flat":
-            # Si le bémol est déjà actif, le désactiver
-            self.deactivate_tools()
-        else:
-            self.active_tool = "flat"
-            self.update_tool_buttons()
-            self.canvas.configure(cursor="crosshair")
-            print("🔧 Outil bémol activé")
-
-    def add_indication(self):
-        if self.active_tool == "indication":
-            # Si l'indication est déjà active, la désactiver
-            self.deactivate_tools()
-        else:
-            self.active_tool = "indication"
-            self.update_tool_buttons()
-            self.canvas.configure(cursor="crosshair")
-            print("🔧 Outil indication activé")
-
-    def activate_eraser(self):
-        if self.active_tool == "eraser":
-            self.deactivate_tools()
-        else:
-            self.active_tool = "eraser"
-            self.update_tool_buttons()
-            self.canvas.configure(cursor="X_cursor")
-            print("🔧 Outil gomme activé")
-
-    def choose_crayon_color(self):
-        """Ouvre un sélecteur de couleur pour le crayon"""
-        from tkinter import colorchooser
-        color = colorchooser.askcolor(title="Choisir la couleur du crayon",
-                                     color=self.crayon_color)
-        if color[1]:  # Si une couleur a été sélectionnée
-            self.crayon_color = color[1]
-            self.color_indicator.configure(bg=self.crayon_color)
-            print(f"🎨 Couleur du crayon changée: {self.crayon_color}")
-
-    def set_crayon_size(self, size):
-        """Définit la taille du crayon"""
-        self.crayon_size = size
-        self.update_size_buttons()
-        print(f"📏 Taille du crayon changée: {size}px")
-
-    def update_size_buttons(self):
-        """Met à jour l'apparence des boutons de taille pour montrer lequel est actif"""
-        active_size_style = {**self.tool_btn, 'bg': self.colors['accent'], 'fg': 'white'}
-        inactive_size_style = self.tool_btn
-
-        # Réinitialiser tous les boutons
-        self.size_small_btn.configure(**inactive_size_style)
-        self.size_medium_btn.configure(**inactive_size_style)
-        self.size_large_btn.configure(**inactive_size_style)
-
-        # Mettre en surbrillance le bouton actif
-        if self.crayon_size == 2:
-            self.size_small_btn.configure(**active_size_style)
-        elif self.crayon_size == 4:
-            self.size_medium_btn.configure(**active_size_style)
-        elif self.crayon_size == 6:
-            self.size_large_btn.configure(**active_size_style)
-
-    def check_navigation_click(self, x, y):
-        """Vérifie si le clic est sur une flèche de navigation et effectue l'action"""
-        if self.spread_view:
-            return False
-
-        canvas_width = self.canvas.winfo_width() or 1100
-        canvas_height = self.canvas.winfo_height() or 800
-        arrow_size = 40
-        arrow_y = canvas_height // 2
-
-        # Zone de la flèche gauche
-        left_arrow_zone = {
-            'x_min': 10,
-            'x_max': 50,
-            'y_min': arrow_y - arrow_size//2 - 10,
-            'y_max': arrow_y + arrow_size//2 + 10
-        }
-
-        # Zone de la flèche droite
-        right_arrow_zone = {
-            'x_min': canvas_width - 50,
-            'x_max': canvas_width - 10,
-            'y_min': arrow_y - arrow_size//2 - 10,
-            'y_max': arrow_y + arrow_size//2 + 10
-        }
-
-        # Vérifier clic sur flèche gauche (page précédente)
-        if (left_arrow_zone['x_min'] <= x <= left_arrow_zone['x_max'] and
-            left_arrow_zone['y_min'] <= y <= left_arrow_zone['y_max'] and
-            self.pdf_viewer.current_page > 0):
-            self.prev_page()
-            return True
-
-        # Vérifier clic sur flèche droite (page suivante)
-        if (right_arrow_zone['x_min'] <= x <= right_arrow_zone['x_max'] and
-            right_arrow_zone['y_min'] <= y <= right_arrow_zone['y_max'] and
-            self.pdf_viewer.current_page < self.pdf_viewer.page_count - 1):
-            self.next_page()
-            return True
-
-        return False
-
-    def erase_at(self, page_number, rel_x, rel_y):
-        """Trouve l'élément (notation ou tracé) le plus proche du clic et le supprime"""
+    def erase_at(self, page_num, rel_x, rel_y):
         best_dist = ERASER_TOLERANCE
         best_kind = None
         best_notation = None
-        best_path_list = None
         best_path_index = None
 
-        for notation in self.music_notation.get_page_notations(page_number):
+        for notation in self.music_notation.get_page_notations(page_num):
             dx = notation['relative_x'] - rel_x
             dy = notation['relative_y'] - rel_y
             dist = (dx * dx + dy * dy) ** 0.5
@@ -1239,7 +1255,7 @@ class MusicSheetEditor:
                 best_kind = 'notation'
                 best_notation = notation
 
-        drawings = self.music_notation.get_page_drawings(page_number)
+        drawings = self.music_notation.get_page_drawings(page_num)
         for path_index, path_data in enumerate(drawings):
             points = path_data.get('points', []) if isinstance(path_data, dict) else path_data
             for point in points:
@@ -1249,277 +1265,39 @@ class MusicSheetEditor:
                 if dist < best_dist:
                     best_dist = dist
                     best_kind = 'drawing'
-                    best_path_list = drawings
                     best_path_index = path_index
 
         if best_kind is None:
-            print("🧹 Rien à effacer à proximité du clic")
             return
 
         self.push_history()
         if best_kind == 'notation':
             self.music_notation.annotations.remove(best_notation)
-            print(f"🧹 Notation supprimée ({best_notation['type']})")
-        elif best_kind == 'drawing':
-            best_path_list.pop(best_path_index)
-            print("🧹 Tracé supprimé")
-
-        self.render_pdf_with_annotations()
-
-    def _resolve_click_context(self, x, y):
-        """Retourne (page_number, rel_x, rel_y) pour un clic donné, ou None si hors partition"""
-        if self.spread_view:
-            slot = self.find_slot_at(x, y)
-            if not slot:
-                return None
-            rel_x, rel_y = self.annotation_manager.absolute_to_relative(
-                x, y, slot['x'], slot['y'], slot['width'], slot['height']
-            )
-            self.active_slot = slot
-            return slot['page'], rel_x, rel_y
-
-        if not self.is_click_on_pdf(x, y):
-            return None
-        rel_x, rel_y = self.annotation_manager.absolute_to_relative(
-            x, y, self.pdf_display_x, self.pdf_display_y, self.pdf_display_width, self.pdf_display_height
-        )
-        return self.pdf_viewer.current_page, rel_x, rel_y
-
-    def on_canvas_press(self, event):
-        # Vérifier d'abord si le clic est sur une flèche de navigation
-        if self.check_navigation_click(event.x, event.y):
-            return
-
-        context = self._resolve_click_context(event.x, event.y)
-        if context is None:
-            print("❌ Clic en dehors de la zone PDF")
-            return
-        current_page, rel_x, rel_y = context
-
-        if self.active_tool == "crayon":
-            self.drawing = True
-            self.last_x = event.x
-            self.last_y = event.y
-
-            # Vider le buffer au début d'un nouveau tracé
-            self.drawing_buffer.clear()
-            if self.buffer_timer:
-                self.master.after_cancel(self.buffer_timer)
-                self.buffer_timer = None
-
-            # Enregistrer l'état pour l'annulation avant de commencer le tracé
-            self.push_history()
-
-            # Démarrer un nouveau tracé avec couleur et taille actuelles
-            self.current_drawing_path_index = self.music_notation.start_new_drawing(
-                current_page, self.crayon_color, self.crayon_size)
-
-            # Ajouter le premier point immédiatement (pas de buffer pour le premier point)
-            self.music_notation.add_drawing_point(current_page, rel_x, rel_y, self.current_drawing_path_index)
-
-        elif self.active_tool == "sharp":
-            self.push_history()
-            notation = self.music_notation.add_sharp(current_page, rel_x, rel_y)
-            canvas_id = self.canvas.create_text(event.x, event.y, text="♯",
-                                               font=(self.fonts['button'][0], 24, "bold"),
-                                               fill=self.colors['accent'])
-            notation['canvas_id'] = canvas_id
-
-        elif self.active_tool == "flat":
-            self.push_history()
-            notation = self.music_notation.add_flat(current_page, rel_x, rel_y)
-            canvas_id = self.canvas.create_text(event.x, event.y, text="♭",
-                                               font=(self.fonts['button'][0], 24, "bold"),
-                                               fill=self.colors['accent'])
-            notation['canvas_id'] = canvas_id
-
-        elif self.active_tool == "indication":
-            # Demander à l'utilisateur de saisir le texte de l'indication
-            from tkinter import simpledialog
-            indication_text = simpledialog.askstring(
-                "Indication musicale",
-                "Entrez le texte de l'indication :",
-                initialvalue="",
-                parent=self.master
-            )
-
-            # Si l'utilisateur a saisi quelque chose
-            if indication_text and indication_text.strip():
-                self.push_history()
-                notation = self.music_notation.draw_indication(indication_text.strip(), current_page, rel_x, rel_y)
-                canvas_id = self.canvas.create_text(event.x, event.y, text=indication_text.strip(),
-                                                   font=(self.fonts['button'][0], 16, "italic"),
-                                                   fill=self.colors['success'])
-                notation['canvas_id'] = canvas_id
-            else:
-                print("❌ Aucune indication ajoutée - texte vide ou annulé")
-
-        elif self.active_tool == "eraser":
-            self.erase_at(current_page, rel_x, rel_y)
-
-    def on_canvas_drag(self, event):
-        if self.active_tool != "crayon" or not self.drawing:
-            return
-
-        if self.spread_view:
-            slot = self.active_slot
-            if not slot or not (slot['x'] <= event.x <= slot['x'] + slot['width'] and
-                                 slot['y'] <= event.y <= slot['y'] + slot['height']):
-                return
         else:
-            if not self.is_click_on_pdf(event.x, event.y):
-                return
+            drawings.pop(best_path_index)
+        self.rebuild_scene(preserve_view=True)
 
-        # Vérifier la distance minimale pour éviter trop de points
-        import time
-        current_time = time.time() * 1000  # millisecondes
-
-        # Limiter à environ 60 FPS pour le crayon
-        if current_time - self.last_motion_time < 16:  # ~16ms = 60 FPS
-            # Juste dessiner sans sauvegarder le point
-            self.canvas.create_line(
-                self.last_x, self.last_y, event.x, event.y,
-                fill=self.crayon_color,
-                width=self.crayon_size,
-                capstyle='round',
-                smooth=True
-            )
-            self.last_x = event.x
-            self.last_y = event.y
+    def clear_current_page(self):
+        if not self.current_pdf_path:
             return
+        self.push_history()
+        page = self.pdf_viewer.current_page
+        self.music_notation.clear_page_notation(page)
+        self.annotation_manager.clear_page_annotations(page)
+        self.rebuild_scene(preserve_view=True)
 
-        self.last_motion_time = current_time
 
-        # Dessiner immédiatement sur le canvas pour la réactivité
-        self.canvas.create_line(
-            self.last_x, self.last_y, event.x, event.y,
-            fill=self.crayon_color,
-            width=self.crayon_size,
-            capstyle='round',
-            smooth=True
-        )
+def main():
+    app = QApplication(sys.argv)
+    app.setApplicationName("Arpège")
+    logo_path = os.path.join(ASSETS_DIR, "Logo.png")
+    if os.path.exists(logo_path):
+        app.setWindowIcon(QIcon(logo_path))
+    app.setStyleSheet(QSS)
+    window = ArpegeWindow()
+    window.show()
+    sys.exit(app.exec())
 
-        # Ajouter les coordonnées au buffer pour traitement ultérieur
-        if self.spread_view:
-            slot = self.active_slot
-            rel_x, rel_y = self.annotation_manager.absolute_to_relative(
-                event.x, event.y, slot['x'], slot['y'], slot['width'], slot['height']
-            )
-            page_num = slot['page']
-        else:
-            rel_x, rel_y = self.annotation_manager.absolute_to_relative(
-                event.x, event.y,
-                self.pdf_display_x, self.pdf_display_y,
-                self.pdf_display_width, self.pdf_display_height
-            )
-            page_num = self.pdf_viewer.current_page
-
-        self.drawing_buffer.append({
-            'page': page_num,
-            'rel_x': rel_x,
-            'rel_y': rel_y,
-            'path_index': self.current_drawing_path_index
-        })
-
-        # Traiter le buffer de façon asynchrone pour ne pas bloquer l'interface
-        if self.buffer_timer:
-            self.master.after_cancel(self.buffer_timer)
-        self.buffer_timer = self.master.after(5, self.process_drawing_buffer)  # Réduit à 5ms
-
-        self.last_x = event.x
-        self.last_y = event.y
-
-    def process_drawing_buffer(self):
-        """Traite le buffer de points de dessin de façon asynchrone"""
-        if not self.drawing_buffer:
-            return
-
-        # Traiter tous les points du buffer
-        for point_data in self.drawing_buffer:
-            self.music_notation.add_drawing_point(
-                point_data['page'],
-                point_data['rel_x'],
-                point_data['rel_y'],
-                point_data['path_index']
-            )
-
-        # Vider le buffer
-        self.drawing_buffer.clear()
-        self.buffer_timer = None
-
-    def on_canvas_release(self, event):
-        if self.active_tool == "crayon":
-            self.drawing = False
-
-            # S'assurer que le buffer est vidé immédiatement
-            if self.buffer_timer:
-                self.master.after_cancel(self.buffer_timer)
-                self.buffer_timer = None
-            self.process_drawing_buffer()
-
-            self.last_x = None
-            self.last_y = None
-            self.current_drawing_path_index = None
-            self.active_slot = None
-
-    def on_mouse_motion(self, event):
-        """Gère le mouvement de la souris pour changer le curseur sur les flèches"""
-        if self.spread_view:
-            if self.active_tool == "crayon":
-                self.canvas.configure(cursor="pencil")
-            elif self.active_tool in ("sharp", "flat", "indication"):
-                self.canvas.configure(cursor="crosshair")
-            elif self.active_tool == "eraser":
-                self.canvas.configure(cursor="X_cursor")
-            else:
-                self.canvas.configure(cursor="arrow")
-            return
-
-        canvas_width = self.canvas.winfo_width() or 1100
-        canvas_height = self.canvas.winfo_height() or 800
-        arrow_size = 40
-        arrow_y = canvas_height // 2
-
-        # Zone de la flèche gauche
-        left_arrow_zone = {
-            'x_min': 10,
-            'x_max': 50,
-            'y_min': arrow_y - arrow_size//2 - 10,
-            'y_max': arrow_y + arrow_size//2 + 10
-        }
-
-        # Zone de la flèche droite
-        right_arrow_zone = {
-            'x_min': canvas_width - 50,
-            'x_max': canvas_width - 10,
-            'y_min': arrow_y - arrow_size//2 - 10,
-            'y_max': arrow_y + arrow_size//2 + 10
-        }
-
-        # Vérifier si on survole une flèche
-        over_left_arrow = (left_arrow_zone['x_min'] <= event.x <= left_arrow_zone['x_max'] and
-                          left_arrow_zone['y_min'] <= event.y <= left_arrow_zone['y_max'] and
-                          self.pdf_viewer.current_page > 0)
-
-        over_right_arrow = (right_arrow_zone['x_min'] <= event.x <= right_arrow_zone['x_max'] and
-                           right_arrow_zone['y_min'] <= event.y <= right_arrow_zone['y_max'] and
-                           self.pdf_viewer.current_page < self.pdf_viewer.page_count - 1)
-
-        # Changer le curseur selon la position
-        if over_left_arrow or over_right_arrow:
-            self.canvas.configure(cursor="hand2")
-        else:
-            # Restaurer le curseur selon l'outil actif
-            if self.active_tool == "crayon":
-                self.canvas.configure(cursor="pencil")
-            elif self.active_tool in ["sharp", "flat", "indication"]:
-                self.canvas.configure(cursor="crosshair")
-            elif self.active_tool == "eraser":
-                self.canvas.configure(cursor="X_cursor")
-            else:
-                self.canvas.configure(cursor="arrow")
 
 if __name__ == "__main__":
-    root = Tk()
-    app = MusicSheetEditor(root)
-    root.mainloop()
+    main()
