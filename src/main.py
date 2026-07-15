@@ -12,11 +12,13 @@ import fitz
 from PySide6.QtCore import Qt, QPointF, QRectF, QSize
 from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QImage, QKeySequence,
                            QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut)
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QColorDialog, QFileDialog,
-                               QFrame, QGraphicsDropShadowEffect, QGraphicsItem,
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QColorDialog,
+                               QDialog, QDialogButtonBox, QDockWidget, QFileDialog,
+                               QFormLayout, QFrame, QGraphicsDropShadowEffect, QGraphicsItem,
                                QGraphicsPathItem, QGraphicsRectItem, QGraphicsScene,
                                QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout,
-                               QInputDialog, QLabel, QMainWindow, QMessageBox,
+                               QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
                                QSizePolicy, QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from features.pdf_viewer import PDFViewer
@@ -24,6 +26,7 @@ from features.annotation import AnnotationManager
 from features.music_notation import MusicNotation
 from features.history import HistoryManager
 from features.pdf_export import export_annotated_pdf
+from features.library import Library, METADATA_FIELDS
 from utils import recent_files
 
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets')
@@ -211,6 +214,50 @@ QScrollBar::handle {{
 QScrollBar::handle:hover {{ background: {C['blue']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+
+QDockWidget {{
+    color: {C['text']};
+    titlebar-close-icon: none;
+    titlebar-normal-icon: none;
+}}
+QDockWidget::title {{
+    background-color: {C['crust']};
+    padding: 8px 12px;
+    font-weight: 700;
+    border-bottom: 1px solid {C['surface0']};
+}}
+QDockWidget > QWidget {{ background-color: {C['mantle']}; }}
+
+QListWidget {{
+    background-color: {C['mantle']};
+    color: {C['text']};
+    border: none;
+    outline: none;
+    padding: 4px;
+}}
+QListWidget::item {{
+    padding: 8px 10px;
+    border-radius: 8px;
+    margin: 1px 2px;
+}}
+QListWidget::item:hover {{ background-color: {C['surface0']}; }}
+QListWidget::item:selected {{
+    background-color: {C['blue']};
+    color: {C['crust']};
+}}
+
+QLineEdit, QPlainTextEdit {{
+    background-color: {C['surface0']};
+    color: {C['text']};
+    border: 1px solid {C['surface1']};
+    border-radius: 8px;
+    padding: 6px 10px;
+    selection-background-color: {C['blue']};
+    selection-color: {C['crust']};
+}}
+QLineEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {C['blue']}; }}
+
+QLabel#panelHint {{ color: {C['subtext']}; padding: 4px 6px; }}
 """
 
 
@@ -460,6 +507,125 @@ class SheetView(QGraphicsView):
             self._press_pos = None
 
 
+class MetadataDialog(QDialog):
+    """Éditeur des métadonnées d'une partition."""
+
+    LABELS = {
+        'title': 'Titre',
+        'composer': 'Compositeur',
+        'arranger': 'Arrangeur',
+        'key': 'Tonalité',
+        'tempo': 'Tempo',
+        'genre': 'Genre',
+    }
+
+    def __init__(self, parent, score):
+        super().__init__(parent)
+        self.setWindowTitle("Métadonnées de la partition")
+        self.setMinimumWidth(420)
+        layout = QVBoxLayout(self)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+        self.edits = {}
+        for field in ['title', 'composer', 'arranger', 'key', 'tempo', 'genre']:
+            edit = QLineEdit(str(score.get(field, '')))
+            self.edits[field] = edit
+            form.addRow(self.LABELS[field], edit)
+        self.notes_edit = QPlainTextEdit(str(score.get('notes', '')))
+        self.notes_edit.setFixedHeight(90)
+        form.addRow('Notes', self.notes_edit)
+        layout.addLayout(form)
+
+        path_label = QLabel(score.get('path', ''))
+        path_label.setObjectName("panelHint")
+        path_label.setWordWrap(True)
+        layout.addWidget(path_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def values(self):
+        data = {field: edit.text() for field, edit in self.edits.items()}
+        data['notes'] = self.notes_edit.toPlainText()
+        return data
+
+
+class PageOrderDialog(QDialog):
+    """Réordonner / masquer / dupliquer les pages en une séquence personnalisée.
+
+    N'affecte jamais le PDF d'origine : la séquence est une liste d'indices source.
+    """
+
+    def __init__(self, parent, page_count, sequence, thumb_provider):
+        super().__init__(parent)
+        self.setWindowTitle("Gérer les pages")
+        self.setMinimumSize(340, 520)
+        self.page_count = page_count
+
+        layout = QVBoxLayout(self)
+        hint = QLabel("Glissez pour réordonner. La séquence n'altère pas le PDF d'origine.")
+        hint.setObjectName("panelHint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self.list = QListWidget()
+        self.list.setDragDropMode(QAbstractItemView.InternalMove)
+        self.list.setDefaultDropAction(Qt.MoveAction)
+        self.list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list.setIconSize(QSize(70, 99))
+        self.list.setSpacing(2)
+        layout.addWidget(self.list)
+
+        for src in sequence:
+            self._add_row(src, thumb_provider(src))
+
+        btns = QHBoxLayout()
+        for text, slot in [("Masquer", self._hide_selected),
+                           ("Dupliquer", self._duplicate_selected),
+                           ("Réinitialiser", self._reset)]:
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            btns.addWidget(b)
+        layout.addLayout(btns)
+        self._thumb_provider = thumb_provider
+
+        box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        box.accepted.connect(self.accept)
+        box.rejected.connect(self.reject)
+        layout.addWidget(box)
+
+    def _add_row(self, src, icon, at=None):
+        item = QListWidgetItem(f"  Page {src + 1}")
+        item.setData(Qt.UserRole, src)
+        if icon is not None:
+            item.setIcon(icon)
+        if at is None:
+            self.list.addItem(item)
+        else:
+            self.list.insertItem(at, item)
+
+    def _hide_selected(self):
+        for item in self.list.selectedItems():
+            self.list.takeItem(self.list.row(item))
+
+    def _duplicate_selected(self):
+        rows = sorted(self.list.row(i) for i in self.list.selectedItems())
+        for offset, row in enumerate(rows):
+            src = self.list.item(row + offset).data(Qt.UserRole)
+            self._add_row(src, self._thumb_provider(src), at=row + offset + 1)
+
+    def _reset(self):
+        self.list.clear()
+        for src in range(self.page_count):
+            self._add_row(src, self._thumb_provider(src))
+
+    def sequence(self):
+        return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())]
+
+
 class ArpegeWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -473,8 +639,16 @@ class ArpegeWindow(QMainWindow):
         self.annotation_manager = AnnotationManager()
         self.music_notation = MusicNotation()
         self.history_manager = HistoryManager()
+        self.library = Library()
+        # Migration : importer les anciens fichiers récents dans la bibliothèque
+        self.library.import_paths(recent_files.load_recent_files())
 
         self.current_pdf_path = None
+        self.current_score_id = None
+        self.bookmarks = []          # signets de la partition courante : [{label, page}]
+        self.page_sequence = None    # séquence de pages personnalisée (indices source) ou None
+        self.seq_pos = 0             # position courante dans la séquence
+        self.active_setlist_id = None
         self.active_tool = None      # None | 'crayon' | 'sharp' | 'flat' | 'indication' | 'eraser'
         self.crayon_color = '#e74c3c'
         self.crayon_size = 4
@@ -507,9 +681,11 @@ class ArpegeWindow(QMainWindow):
         self.build_menu()
         self.build_toolbar()
         self.build_sidebar()
+        self.build_panels()
         self.build_statusbar()
         self.build_shortcuts()
 
+        self.refresh_library()
         self.show_placeholder()
 
     # ------------------------------------------------------------------
@@ -722,6 +898,96 @@ class ArpegeWindow(QMainWindow):
         hbox.addWidget(central)
         self.setCentralWidget(wrapper)
 
+    def _dock_body(self):
+        """Widget + layout vertical standard pour le contenu d'un dock."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        return widget, layout
+
+    def build_panels(self):
+        # --- Bibliothèque -------------------------------------------------
+        self.library_dock = QDockWidget("Bibliothèque", self)
+        self.library_dock.setObjectName("library_dock")
+        body, lay = self._dock_body()
+        self.library_search = QLineEdit()
+        self.library_search.setPlaceholderText("Rechercher (titre, compositeur…)")
+        self.library_search.setClearButtonEnabled(True)
+        self.library_search.textChanged.connect(self.refresh_library)
+        lay.addWidget(self.library_search)
+        self.library_list = QListWidget()
+        self.library_list.itemActivated.connect(
+            lambda item: self.open_score_id(item.data(Qt.UserRole)))
+        self.library_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.library_list.customContextMenuRequested.connect(self.library_context_menu)
+        lay.addWidget(self.library_list)
+        row = QHBoxLayout()
+        add_btn = QPushButton("＋ Ajouter…")
+        add_btn.clicked.connect(self.open_pdf_dialog)
+        info_btn = QPushButton("Infos")
+        info_btn.clicked.connect(self.edit_selected_metadata)
+        row.addWidget(add_btn)
+        row.addWidget(info_btn)
+        lay.addLayout(row)
+        self.library_dock.setWidget(body)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.library_dock)
+
+        # --- Signets ------------------------------------------------------
+        self.bookmarks_dock = QDockWidget("Signets", self)
+        self.bookmarks_dock.setObjectName("bookmarks_dock")
+        body, lay = self._dock_body()
+        self.bookmarks_list = QListWidget()
+        self.bookmarks_list.itemActivated.connect(
+            lambda item: self.go_to_page(item.data(Qt.UserRole)))
+        self.bookmarks_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.bookmarks_list.customContextMenuRequested.connect(self.bookmark_context_menu)
+        lay.addWidget(self.bookmarks_list)
+        add_bm = QPushButton("＋ Signet à la page courante")
+        add_bm.clicked.connect(self.add_bookmark)
+        lay.addWidget(add_bm)
+        self.bookmarks_dock.setWidget(body)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.bookmarks_dock)
+
+        # --- Setlists -----------------------------------------------------
+        self.setlist_dock = QDockWidget("Setlists", self)
+        self.setlist_dock.setObjectName("setlist_dock")
+        body, lay = self._dock_body()
+        self.setlist_combo_list = QListWidget()
+        self.setlist_combo_list.setFixedHeight(96)
+        self.setlist_combo_list.itemClicked.connect(
+            lambda item: self.select_setlist(item.data(Qt.UserRole)))
+        self.setlist_combo_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.setlist_combo_list.customContextMenuRequested.connect(self.setlist_context_menu)
+        lay.addWidget(QLabel("Setlists", objectName="panelHint"))
+        lay.addWidget(self.setlist_combo_list)
+        new_sl = QPushButton("＋ Nouvelle setlist")
+        new_sl.clicked.connect(self.create_setlist)
+        lay.addWidget(new_sl)
+        lay.addWidget(QLabel("Morceaux", objectName="panelHint"))
+        self.setlist_songs = QListWidget()
+        self.setlist_songs.itemActivated.connect(
+            lambda item: self.open_setlist_song(self.setlist_songs.row(item)))
+        self.setlist_songs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.setlist_songs.customContextMenuRequested.connect(self.setlist_song_context_menu)
+        lay.addWidget(self.setlist_songs)
+        self.setlist_dock.setWidget(body)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.setlist_dock)
+
+        # Empiler les trois panneaux en onglets
+        self.tabifyDockWidget(self.library_dock, self.bookmarks_dock)
+        self.tabifyDockWidget(self.library_dock, self.setlist_dock)
+        self.library_dock.raise_()
+        self.resizeDocks([self.library_dock], [260], Qt.Horizontal)
+
+        # Entrées de menu pour afficher/masquer les panneaux
+        panels_menu = self.menuBar().addMenu("Panneaux")
+        panels_menu.addAction(self.library_dock.toggleViewAction())
+        panels_menu.addAction(self.bookmarks_dock.toggleViewAction())
+        panels_menu.addAction(self.setlist_dock.toggleViewAction())
+
+        self.refresh_setlists()
+
     def build_statusbar(self):
         sb = self.statusBar()
         self.hint_label = QLabel("Ouvrez une partition pour commencer  •  Ctrl+O")
@@ -738,6 +1004,276 @@ class ArpegeWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_End), self, activated=self.go_last)
         QShortcut(QKeySequence(Qt.Key_Escape), self, activated=lambda: self.set_tool(None))
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self, activated=self.redo)
+        QShortcut(QKeySequence("Ctrl+B"), self, activated=self.add_bookmark)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=lambda: self.library_dock.raise_())
+        QShortcut(QKeySequence("Alt+Right"), self, activated=self.next_song)
+        QShortcut(QKeySequence("Alt+Left"), self, activated=self.prev_song)
+
+    # ------------------------------------------------------------------
+    # Bibliothèque
+    # ------------------------------------------------------------------
+
+    def refresh_library(self):
+        if not hasattr(self, 'library_list'):
+            return
+        query = self.library_search.text()
+        self.library_list.clear()
+        for score in self.library.search(query):
+            title = score.get('title') or os.path.basename(score.get('path', ''))
+            composer = score.get('composer')
+            label = f"{title}   ·   {composer}" if composer else title
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, score['id'])
+            if os.path.exists(score.get('path', '')):
+                item.setToolTip(score['path'])
+            else:
+                item.setForeground(QColor(C['surface1']))
+                item.setToolTip("Fichier introuvable :\n" + score.get('path', ''))
+            if score['id'] == self.current_score_id:
+                item.setSelected(True)
+            self.library_list.addItem(item)
+
+    def open_score_id(self, score_id):
+        score = self.library.get_score(score_id)
+        if not score:
+            return
+        if not os.path.exists(score.get('path', '')):
+            QMessageBox.warning(self, "Fichier introuvable",
+                                f"Le fichier n'existe plus :\n{score.get('path', '')}")
+            return
+        self.open_pdf(score['path'])
+
+    def library_context_menu(self, pos):
+        item = self.library_list.itemAt(pos)
+        if not item:
+            return
+        score_id = item.data(Qt.UserRole)
+        menu = QMenu(self)
+        menu.addAction("Ouvrir", lambda: self.open_score_id(score_id))
+        menu.addAction("Métadonnées…", lambda: self._edit_metadata(score_id))
+        if self.library.setlists:
+            sub = menu.addMenu("Ajouter à la setlist")
+            for setlist in self.library.setlists:
+                sub.addAction(setlist['name'],
+                              lambda checked=False, sid=setlist['id']:
+                              self._add_to_setlist(sid, score_id))
+        menu.addSeparator()
+        menu.addAction("Retirer de la bibliothèque",
+                       lambda: self._remove_from_library(score_id))
+        menu.exec(self.library_list.mapToGlobal(pos))
+
+    def edit_selected_metadata(self):
+        item = self.library_list.currentItem()
+        if item:
+            self._edit_metadata(item.data(Qt.UserRole))
+        elif self.current_score_id:
+            self._edit_metadata(self.current_score_id)
+        else:
+            QMessageBox.information(self, "Métadonnées",
+                                    "Sélectionnez une partition dans la bibliothèque.")
+
+    def _edit_metadata(self, score_id):
+        score = self.library.get_score(score_id)
+        if not score:
+            return
+        dialog = MetadataDialog(self, score)
+        if dialog.exec() == QDialog.Accepted:
+            self.library.update_metadata(score_id, **dialog.values())
+            self.refresh_library()
+            if score_id == self.current_score_id:
+                self._update_title_from_library()
+
+    def _remove_from_library(self, score_id):
+        score = self.library.get_score(score_id)
+        title = score.get('title', '') if score else ''
+        confirm = QMessageBox.question(
+            self, "Retirer de la bibliothèque",
+            f"Retirer « {title} » de la bibliothèque ?\n"
+            "(Le fichier PDF et ses annotations ne sont pas supprimés.)")
+        if confirm == QMessageBox.Yes:
+            self.library.remove_score(score_id)
+            if score_id == self.current_score_id:
+                self.current_score_id = None
+            self.refresh_library()
+            self.refresh_setlists()
+
+    def _update_title_from_library(self):
+        score = self.library.get_score(self.current_score_id) if self.current_score_id else None
+        title = score.get('title') if score else None
+        if not title and self.current_pdf_path:
+            title = os.path.basename(self.current_pdf_path)
+        self.setWindowTitle(f"Arpège — {title}" if title else "Arpège")
+
+    # ------------------------------------------------------------------
+    # Signets (bookmarks)
+    # ------------------------------------------------------------------
+
+    def refresh_bookmarks(self):
+        if not hasattr(self, 'bookmarks_list'):
+            return
+        self.bookmarks_list.clear()
+        for bm in sorted(self.bookmarks, key=lambda b: b['page']):
+            item = QListWidgetItem(f"p.{bm['page'] + 1}   {bm['label']}")
+            item.setData(Qt.UserRole, bm['page'])
+            self.bookmarks_list.addItem(item)
+
+    def add_bookmark(self):
+        if not self.current_pdf_path:
+            return
+        page = self.pdf_viewer.current_page
+        label, ok = QInputDialog.getText(self, "Nouveau signet",
+                                         f"Nom du signet (page {page + 1}) :")
+        if ok:
+            self.bookmarks.append({'label': label.strip() or f"Page {page + 1}",
+                                   'page': page})
+            self.save_annotations(silent=True)
+            self.refresh_bookmarks()
+
+    def bookmark_context_menu(self, pos):
+        item = self.bookmarks_list.itemAt(pos)
+        if not item:
+            return
+        page = item.data(Qt.UserRole)
+        menu = QMenu(self)
+        menu.addAction("Aller à la page", lambda: self.go_to_page(page))
+        menu.addAction("Supprimer", lambda: self._remove_bookmark(page))
+        menu.exec(self.bookmarks_list.mapToGlobal(pos))
+
+    def _remove_bookmark(self, page):
+        self.bookmarks = [b for b in self.bookmarks if b['page'] != page]
+        self.save_annotations(silent=True)
+        self.refresh_bookmarks()
+
+    def go_to_page(self, page):
+        """Va à une page source donnée (via sa première position dans la séquence)."""
+        if not (self.pdf_viewer.pdf_document and 0 <= page < self.pdf_viewer.page_count):
+            return
+        seq = self.effective_sequence()
+        pos = seq.index(page) if page in seq else 0
+        self._goto_seq_pos(pos)
+
+    # ------------------------------------------------------------------
+    # Setlists
+    # ------------------------------------------------------------------
+
+    def refresh_setlists(self):
+        if not hasattr(self, 'setlist_combo_list'):
+            return
+        self.setlist_combo_list.clear()
+        for setlist in self.library.setlists:
+            item = QListWidgetItem(f"{setlist['name']}  ({len(setlist['score_ids'])})")
+            item.setData(Qt.UserRole, setlist['id'])
+            if setlist['id'] == self.active_setlist_id:
+                item.setSelected(True)
+            self.setlist_combo_list.addItem(item)
+        self.refresh_setlist_songs()
+
+    def create_setlist(self):
+        name, ok = QInputDialog.getText(self, "Nouvelle setlist", "Nom de la setlist :")
+        if ok and name.strip():
+            setlist = self.library.add_setlist(name.strip())
+            self.active_setlist_id = setlist['id']
+            self.refresh_setlists()
+
+    def select_setlist(self, setlist_id):
+        self.active_setlist_id = setlist_id
+        self.refresh_setlist_songs()
+
+    def setlist_context_menu(self, pos):
+        item = self.setlist_combo_list.itemAt(pos)
+        if not item:
+            return
+        setlist_id = item.data(Qt.UserRole)
+        menu = QMenu(self)
+        menu.addAction("Renommer…", lambda: self._rename_setlist(setlist_id))
+        menu.addAction("Supprimer", lambda: self._delete_setlist(setlist_id))
+        menu.exec(self.setlist_combo_list.mapToGlobal(pos))
+
+    def _rename_setlist(self, setlist_id):
+        setlist = self.library.get_setlist(setlist_id)
+        if not setlist:
+            return
+        name, ok = QInputDialog.getText(self, "Renommer la setlist",
+                                        "Nom :", text=setlist['name'])
+        if ok and name.strip():
+            self.library.rename_setlist(setlist_id, name.strip())
+            self.refresh_setlists()
+
+    def _delete_setlist(self, setlist_id):
+        if self.active_setlist_id == setlist_id:
+            self.active_setlist_id = None
+        self.library.remove_setlist(setlist_id)
+        self.refresh_setlists()
+
+    def _add_to_setlist(self, setlist_id, score_id):
+        self.library.add_to_setlist(setlist_id, score_id)
+        self.active_setlist_id = setlist_id
+        self.refresh_setlists()
+
+    def refresh_setlist_songs(self):
+        if not hasattr(self, 'setlist_songs'):
+            return
+        self.setlist_songs.clear()
+        if not self.active_setlist_id:
+            return
+        for score in self.library.setlist_scores(self.active_setlist_id):
+            title = score.get('title') or os.path.basename(score.get('path', ''))
+            item = QListWidgetItem(title)
+            item.setData(Qt.UserRole, score['id'])
+            if score['id'] == self.current_score_id:
+                item.setSelected(True)
+            self.setlist_songs.addItem(item)
+
+    def open_setlist_song(self, row):
+        scores = self.library.setlist_scores(self.active_setlist_id)
+        if 0 <= row < len(scores):
+            self.open_score_id(scores[row]['id'])
+
+    def setlist_song_context_menu(self, pos):
+        item = self.setlist_songs.itemAt(pos)
+        if not item:
+            return
+        score_id = item.data(Qt.UserRole)
+        row = self.setlist_songs.row(item)
+        menu = QMenu(self)
+        menu.addAction("Ouvrir", lambda: self.open_setlist_song(row))
+        menu.addAction("Monter", lambda: self._move_setlist_song(row, -1))
+        menu.addAction("Descendre", lambda: self._move_setlist_song(row, 1))
+        menu.addSeparator()
+        menu.addAction("Retirer de la setlist",
+                       lambda: self._remove_setlist_song(score_id))
+        menu.exec(self.setlist_songs.mapToGlobal(pos))
+
+    def _move_setlist_song(self, row, delta):
+        setlist = self.library.get_setlist(self.active_setlist_id)
+        if not setlist:
+            return
+        ids = setlist['score_ids']
+        new = row + delta
+        if 0 <= new < len(ids):
+            ids[row], ids[new] = ids[new], ids[row]
+            self.library.set_setlist_order(self.active_setlist_id, ids)
+            self.refresh_setlist_songs()
+
+    def _remove_setlist_song(self, score_id):
+        self.library.remove_from_setlist(self.active_setlist_id, score_id)
+        self.refresh_setlists()
+
+    def next_song(self):
+        self._step_song(1)
+
+    def prev_song(self):
+        self._step_song(-1)
+
+    def _step_song(self, delta):
+        if not self.active_setlist_id:
+            return
+        scores = self.library.setlist_scores(self.active_setlist_id)
+        ids = [s['id'] for s in scores]
+        if self.current_score_id in ids:
+            idx = ids.index(self.current_score_id) + delta
+            if 0 <= idx < len(ids):
+                self.open_score_id(ids[idx])
 
     # ------------------------------------------------------------------
     # Outils
@@ -839,17 +1375,25 @@ class ArpegeWindow(QMainWindow):
         self.annotation_manager.page_annotations.clear()
         self.history_manager.clear()
         self._pixmap_cache.clear()
+        self.bookmarks = []
+        self.page_sequence = None
+        self.seq_pos = 0
 
         self.current_pdf_path = path
         self.pdf_viewer.load_pdf(path)
         self.load_existing_annotations()
         recent_files.add_recent_file(path)
+        score = self.library.add_or_touch(path)
+        self.current_score_id = score['id']
 
         self.rebuild_scene()
         self.fit_view()
         self.set_tool(None)
+        self.refresh_library()
+        self.refresh_bookmarks()
+        self.refresh_setlist_songs()
+        self._update_title_from_library()
         name = os.path.basename(path)
-        self.setWindowTitle(f"Arpège — {name}")
         self.hint_label.setText(f"{name}  •  {self.pdf_viewer.page_count} pages")
 
     def populate_recent_menu(self):
@@ -910,6 +1454,12 @@ class ArpegeWindow(QMainWindow):
             page_num = annotation.get('page', 0)
             self.annotation_manager.page_annotations.setdefault(page_num, []).append(annotation)
 
+        # Signets et séquence de pages personnalisée
+        self.bookmarks = save_data.get('bookmarks', [])
+        seq = save_data.get('page_sequence')
+        self.page_sequence = list(seq) if seq else None
+        self.seq_pos = 0
+
     def load_annotations_manually(self):
         if not self.current_pdf_path:
             QMessageBox.warning(self, "Attention", "Veuillez d'abord charger un PDF.")
@@ -929,9 +1479,10 @@ class ArpegeWindow(QMainWindow):
             QMessageBox.critical(self, "Erreur",
                                  f"Impossible de charger le fichier d'annotations :\n{e}")
 
-    def save_annotations(self):
+    def save_annotations(self, silent=False):
         if not self.current_pdf_path:
-            QMessageBox.warning(self, "Attention", "Aucun PDF chargé.")
+            if not silent:
+                QMessageBox.warning(self, "Attention", "Aucun PDF chargé.")
             return
         pdf_name = os.path.splitext(os.path.basename(self.current_pdf_path))[0]
         save_data = {
@@ -940,6 +1491,8 @@ class ArpegeWindow(QMainWindow):
             'created_date': datetime.now().isoformat(),
             'last_modified': datetime.now().isoformat(),
             'total_pages': self.pdf_viewer.page_count,
+            'bookmarks': self.bookmarks,
+            'page_sequence': self.page_sequence,
             'annotations': {
                 'music_notations': self.music_notation.get_notations(),
                 'drawings': dict(self.music_notation.drawing_paths),
@@ -949,9 +1502,11 @@ class ArpegeWindow(QMainWindow):
         try:
             with open(self._annotations_file(), 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
-            self.hint_label.setText(f"Annotations sauvegardées  •  {self._annotations_file()}")
+            if not silent:
+                self.hint_label.setText(f"Annotations sauvegardées  •  {self._annotations_file()}")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Impossible de sauvegarder :\n{e}")
+            if not silent:
+                QMessageBox.critical(self, "Erreur", f"Impossible de sauvegarder :\n{e}")
 
     def export_pdf(self):
         if not self.current_pdf_path:
@@ -973,29 +1528,39 @@ class ArpegeWindow(QMainWindow):
     # Navigation / zoom
     # ------------------------------------------------------------------
 
+    def effective_sequence(self):
+        """Séquence des pages à afficher (indices source), ordre naturel par défaut."""
+        if self.page_sequence is not None:
+            return self.page_sequence
+        if self.pdf_viewer.pdf_document:
+            return list(range(self.pdf_viewer.page_count))
+        return []
+
+    def _goto_seq_pos(self, pos):
+        seq = self.effective_sequence()
+        if not seq:
+            return
+        pos = max(0, min(pos, len(seq) - 1))
+        self.seq_pos = pos
+        self.pdf_viewer.current_page = seq[pos]
+        self.rebuild_scene()
+        self.fit_view()
+
     def prev_page(self):
-        if self.pdf_viewer.pdf_document and self.pdf_viewer.current_page > 0:
-            self.pdf_viewer.current_page -= 1
-            self.rebuild_scene()
-            self.fit_view()
+        if self.pdf_viewer.pdf_document:
+            self._goto_seq_pos(self.seq_pos - 1)
 
     def next_page(self):
-        if self.pdf_viewer.pdf_document and self.pdf_viewer.current_page < self.pdf_viewer.page_count - 1:
-            self.pdf_viewer.current_page += 1
-            self.rebuild_scene()
-            self.fit_view()
+        if self.pdf_viewer.pdf_document:
+            self._goto_seq_pos(self.seq_pos + 1)
 
     def go_first(self):
         if self.pdf_viewer.pdf_document:
-            self.pdf_viewer.current_page = 0
-            self.rebuild_scene()
-            self.fit_view()
+            self._goto_seq_pos(0)
 
     def go_last(self):
         if self.pdf_viewer.pdf_document:
-            self.pdf_viewer.current_page = self.pdf_viewer.page_count - 1
-            self.rebuild_scene()
-            self.fit_view()
+            self._goto_seq_pos(len(self.effective_sequence()) - 1)
 
     def zoom_in(self):
         if self.current_pdf_path and self.view.transform().m11() * ZOOM_STEP <= ZOOM_MAX:
@@ -1075,13 +1640,16 @@ class ArpegeWindow(QMainWindow):
         self.scene.clear()
         self.page_slots = []
 
-        current = self.pdf_viewer.current_page
+        seq = self.effective_sequence()
+        self.seq_pos = max(0, min(self.seq_pos, len(seq) - 1))
+        self.pdf_viewer.current_page = seq[self.seq_pos]
+        current = seq[self.seq_pos]
         # Vue double : moitié basse de la page courante au-dessus,
-        # moitié haute de la page suivante juste en dessous.
-        if self.spread_view and current + 1 < self.pdf_viewer.page_count:
+        # moitié haute de la page suivante (dans la séquence) juste en dessous.
+        if self.spread_view and self.seq_pos + 1 < len(seq):
             specs = [
                 {'page': current, 'y0': 0.5, 'y1': 1.0},
-                {'page': current + 1, 'y0': 0.0, 'y1': 0.5},
+                {'page': seq[self.seq_pos + 1], 'y0': 0.0, 'y1': 0.5},
             ]
         else:
             specs = [{'page': current, 'y0': 0.0, 'y1': 1.0}]
@@ -1124,10 +1692,11 @@ class ArpegeWindow(QMainWindow):
 
         self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-80, -80, 80, 80))
 
+        total = len(seq)
         if len(specs) > 1:
-            self.page_chip.setText(f"{current + 1}-{current + 2} / {self.pdf_viewer.page_count}")
+            self.page_chip.setText(f"{self.seq_pos + 1}-{self.seq_pos + 2} / {total}")
         else:
-            self.page_chip.setText(f"{current + 1} / {self.pdf_viewer.page_count}")
+            self.page_chip.setText(f"{self.seq_pos + 1} / {total}")
 
         if preserve_view:
             self.view.setTransform(saved_transform)
