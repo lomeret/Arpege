@@ -1,85 +1,113 @@
-# Arpège — Music Sheet Editor
+# Arpège — Éditeur de partitions PDF
 
-Music Sheet Editor is a Python application designed for musicians to manage and annotate their PDF music sheets. This application allows users to select PDF files, make modifications such as adding sharps, flats, and annotations, and navigate through their music sheets seamlessly.
+Arpège est une application multiplateforme (Windows, Android, Linux) pour musiciens :
+elle permet d'ouvrir, d'annoter et d'organiser des partitions PDF. Réécrite en
+**Flutter/Dart** à partir de l'application Python/Qt d'origine, elle partage une base de
+code unique pour les trois cibles.
 
-The interface is built with **Qt (PySide6)**: dark theme, antialiased drawing, smooth
-zoom/pan on a hardware-friendly canvas. The previous tkinter interface is kept as a
-fallback in `src/main_tk.py`.
+## Fonctionnalités
 
-## Features
+- **Lecture PDF** : rendu haute qualité (pdfium), zoom (molette/pincement), déplacement,
+  ajustement à la fenêtre.
+- **Annotations** : crayon libre (couleur + 3 épaisseurs), dièses ♯, bémols ♭, indications
+  textuelles. Gomme pour supprimer un élément.
+- **Annuler / Rétablir** sur les modifications d'annotations.
+- **Navigation** : pages précédente/suivante, première/dernière, appui sur la moitié
+  gauche/droite pour tourner la page.
+- **Vue double page** : moitié basse de la page courante au-dessus, moitié haute de la
+  suivante en dessous, pour anticiper les tournes.
+- **Gestion des pages** : réordonner, masquer, dupliquer les pages dans une séquence
+  personnalisée qui n'altère jamais le PDF d'origine.
+- **Signets** par partition.
+- **Bibliothèque** de partitions avec métadonnées (titre, compositeur, arrangeur, tonalité,
+  tempo, genre, notes) et recherche.
+- **Setlists** : listes ordonnées de morceaux, navigation morceau précédent/suivant.
+- **Fichiers récents**.
+- **Export PDF annoté** : fusionne les annotations en vectoriel dans une copie du PDF.
 
-- **PDF Handling**: Load and save PDF music sheets with ease.
-- **Annotation Management**: Add, remove, and list annotations on music sheets.
-- **Music Notation Editing**: Modify music notation by adding sharps, flats, and other indications.
-- **Eraser Tool**: Click near a symbol or a pencil stroke to delete just that element.
-- **Undo / Redo**: `Ctrl+Z` / `Ctrl+Y` step back and forward through annotation edits.
-- **Zoom & Pan**: Mouse wheel to zoom (centered on the cursor), right-click drag to pan.
-- **Two-page Spread View**: "Affichage > Vue double page" shows two consecutive pages side by
-  side, so page turns can be anticipated while playing.
-- **Page Management**: "Affichage > Gérer les pages…" opens a thumbnail-based dialog to reorder,
-   hide, duplicate, or reset pages without modifying the original PDF.
-- **Keyboard Navigation**: Left/Right, Page Up/Down, Home/End to move between pages; `Esc` to
-  deselect the current tool.
-- **Recent Files**: "Fichier > Fichiers récents" reopens a previously annotated score in one click.
-- **Annotated PDF Export**: "Fichier > Exporter PDF annoté..." merges all annotations into a new,
-  shareable/printable PDF.
-- **User-Friendly Interface**: Intuitive interface for easy navigation and interaction with music sheets.
+Les données restent **compatibles avec l'ancienne app Python** : mêmes fichiers JSON aux
+mêmes emplacements.
 
-## Installation
+- Bibliothèque et setlists : `~/Documents/Arpège/config/library.json`
+- Fichiers récents : `~/Documents/Arpège/config/recent_files.json`
+- Annotations (une par PDF) : `~/Documents/Arpège/annotations/<nom>_annotations.json`
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/lomeret/Arpege.git
-   ```
-2. Navigate to the project directory:
-   ```
-   cd Arpege
-   ```
-3. Create and activate a virtual environment:
-   ```
-   python -m venv venv
-   # Windows
-   venv\Scripts\activate
-   # macOS/Linux
-   source venv/bin/activate
-   ```
-4. Install the required dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+(Sur Android, ces fichiers se trouvent dans le dossier de documents privé de l'application.)
 
-## Usage
+## Raccourcis clavier (desktop)
 
-To run the application, activate the virtual environment (see above) then execute:
-```
-python src/main.py
-```
-
-The legacy tkinter interface remains available with `python src/main_tk.py`.
-
-Follow the on-screen instructions to select and edit your PDF music sheets.
-
-### Keyboard shortcuts
-
-| Shortcut | Action |
+| Raccourci | Action |
 | --- | --- |
-| `Ctrl+O` | Open a PDF |
-| `Ctrl+S` | Save annotations |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
-| `Left` / `Right`, `Page Up` / `Page Down` | Previous / next page |
-| `Home` / `End` | First / last page |
-| `Ctrl+ +` / `Ctrl+ -` / `Ctrl+0` | Zoom in / out / fit to window |
-| `Affichage > Gérer les pages…` | Reorder, hide, duplicate, or reset page sequences |
-| `Ctrl+D` | Toggle two-page spread view |
-| `Ctrl+E` | Export annotated PDF |
-| Mouse wheel | Zoom at cursor |
-| Left drag (no tool) / right drag | Pan the view |
-| `Esc` | Deactivate the current tool |
+| `Ctrl+O` | Ouvrir un PDF |
+| `Ctrl+S` | Sauvegarder les annotations |
+| `Ctrl+E` | Exporter le PDF annoté |
+| `Ctrl+Z` / `Ctrl+Y` | Annuler / Rétablir |
+| `←` / `→`, `Page↑` / `Page↓` | Page précédente / suivante |
+| `Début` / `Fin` | Première / dernière page |
+| `Ctrl+ +` / `Ctrl+ -` / `Ctrl+0` | Zoom avant / arrière / ajuster |
+| `Ctrl+D` | Vue double page |
+| `Ctrl+B` | Ajouter un signet |
+| `Alt+←` / `Alt+→` | Morceau précédent / suivant (setlist) |
+| `Échap` | Désélectionner l'outil |
 
-## Contributing
+## Développement
 
-Contributions are welcome! Please feel free to submit a pull request or open an issue for any suggestions or improvements.
+Prérequis : [Flutter](https://docs.flutter.dev/get-started/install) (stable, ≥ 3.24).
 
-## License
+```bash
+flutter pub get
+flutter run          # lance sur la cible connectée (desktop ou appareil Android)
+flutter analyze      # analyse statique
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Compilation des exécutables
+
+> Les builds desktop de Flutter sont **host-only** : un `.exe` Windows se compile sur
+> Windows, un binaire Linux sur Linux. Android se compile depuis n'importe quel hôte.
+> Le workflow CI [`.github/workflows/build.yml`](.github/workflows/build.yml) produit
+> automatiquement les trois artefacts (Linux, Android, Windows).
+
+### Linux
+
+```bash
+sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+./build-linux.sh
+# → build/linux/x64/release/bundle/arpege
+```
+
+### Android
+
+```bash
+./build-android.sh
+# → build/app/outputs/flutter-apk/app-release.apk
+```
+
+### Windows (sur une machine Windows)
+
+Prérequis : Visual Studio 2022 (« Desktop development with C++ ») et le **Mode
+développeur** Windows activé (pdfrx utilise des liens symboliques à la compilation).
+
+```powershell
+./build-windows.ps1
+# → build\windows\x64\runner\Release\arpege.exe
+```
+
+## Architecture
+
+```
+lib/
+  main.dart              point d'entrée, providers, layout responsive, raccourcis
+  theme.dart             thème sombre (Catppuccin Mocha)
+  models/                Score, Setlist, Notation/DrawingPath, Bookmark, AnnotationDocument
+  services/              chemins, bibliothèque, fichiers récents, annotations, export PDF
+  state/                 LibraryController, EditorController, HistoryManager
+  pdf/pdf_renderer.dart  rendu des pages via pdfrx
+  widgets/               vue partition (zoom/pan/dessin), barres, panneaux, dialogues
+```
+
+Dépendances principales : `pdfrx` (rendu), `syncfusion_flutter_pdf` (export),
+`provider` (état), `path_provider`, `file_picker`.
+
+## Licence
+
+MIT.

@@ -1,0 +1,37 @@
+name: arpege
+description: "Arpège — éditeur de partitions PDF pour musiciens."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.2
+  path: ^1.9.0
+  path_provider: ^2.1.4
+  file_picker: ^8.1.2
+  pdfrx: ^1.0.0
+  syncfusion_flutter_pdf: ^27.1.48
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+
+flutter_launcher_icons:
+  image_path: "assets/Logo.png"
+  android: true
+  windows:
+    generate: true
+    icon_size: 256
+  # Linux n'a pas d'icône embarquée standard : l'icône de fenêtre est gérée dans le runner.

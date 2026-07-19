@@ -1,0 +1,87 @@
+name: Build Arpège
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: "3.24.5"
+
+jobs:
+  # ----- Linux (bundle) + Android (APK) -----
+  linux-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Linux desktop toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Build Linux
+        run: flutter build linux --release
+
+      - name: Package Linux bundle
+        run: |
+          cd build/linux/x64/release/bundle
+          tar czf ${{ github.workspace }}/arpege-linux-x64.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arpege-linux-x64
+          path: arpege-linux-x64.tar.gz
+
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arpege-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  # ----- Windows (.exe) -----
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable Developer Mode (pdfrx symlinks)
+        run: reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+        shell: cmd
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - run: flutter pub get
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Package Windows build
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath arpege-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arpege-windows-x64
+          path: arpege-windows-x64.zip
