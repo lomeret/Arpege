@@ -91,7 +91,7 @@ Future<Color?> pickColor(BuildContext context, Color current) {
                     color: color,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: color.value == current.value
+                      color: color == current
                           ? Colors.white
                           : Colors.transparent,
                       width: 3,

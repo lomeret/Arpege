@@ -67,6 +67,15 @@ flutter analyze      # analyse statique
 > Le workflow CI [`.github/workflows/build.yml`](.github/workflows/build.yml) produit
 > automatiquement les trois artefacts (Linux, Android, Windows).
 
+> **Version minimale : Flutter ≥ 3.41 / Dart ≥ 3.10.** Requis par `pdfrx 2.4.7`.
+> Une version antérieure fait échouer la résolution (`pdfrx requires SDK ^3.10.0`)
+> ou la compilation (`_PdfTextRenderBox is missing implementations`). Sur une
+> version trop ancienne : `flutter upgrade`.
+
+Les scripts ci-dessous ne sont que des enveloppes ; on peut appeler `flutter`
+directement. Sous Windows, tout se pilote depuis **PowerShell** (`flutter build …`),
+y compris l'APK Android.
+
 ### Linux
 
 ```bash
@@ -78,7 +87,8 @@ sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
 ### Android
 
 ```bash
-./build-android.sh
+./build-android.sh              # enveloppe de la commande ci-dessous
+flutter build apk --release     # équivalent direct
 # → build/app/outputs/flutter-apk/app-release.apk
 ```
 
@@ -88,9 +98,14 @@ Prérequis : Visual Studio 2022 (« Desktop development with C++ ») et le **Mod
 développeur** Windows activé (pdfrx utilise des liens symboliques à la compilation).
 
 ```powershell
-./build-windows.ps1
+./build-windows.ps1             # enveloppe de la commande ci-dessous
+flutter build windows           # équivalent direct
 # → build\windows\x64\runner\Release\arpege.exe
 ```
+
+> ⚠️ L'app compilée n'est **pas** un `.exe` autonome : distribuer tout le dossier
+> `Release\` (exe + `flutter_windows.dll` + `pdfium.dll` + `data\`), ou générer un
+> installeur unique avec `python installer\build_installer.py` (voir `installer/`).
 
 ## Architecture
 

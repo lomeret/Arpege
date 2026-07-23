@@ -14,7 +14,7 @@ dependencies:
   path: ^1.9.0
   path_provider: ^2.1.4
   file_picker: ^8.1.2
-  pdfrx: ^1.0.0
+  pdfrx: ^2.4.7
   syncfusion_flutter_pdf: ^27.1.48
 
 dev_dependencies:

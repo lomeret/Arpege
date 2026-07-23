@@ -79,7 +79,7 @@ ThemeData buildArpegeTheme() {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
-    dialogTheme: DialogTheme(
+    dialogTheme: DialogThemeData(
       backgroundColor: AppColors.base,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),

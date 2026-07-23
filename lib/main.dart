@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
 import 'app_actions.dart';
@@ -17,6 +18,18 @@ import 'widgets/tool_sidebar.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Android : dessine sous les barres système (edge-to-edge) et rend-les
+  // transparentes avec des icônes claires, pour éviter les bandeaux blancs
+  // Xiaomi qui recouvrent la toolbar et la barre de statut.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
+  pdfrxFlutterInitialize(); // requis par pdfrx 2.x avant toute utilisation
   final library = LibraryController();
   await library.load();
   // Migration : importe les anciens fichiers récents dans la bibliothèque.
@@ -117,7 +130,8 @@ class _ArpegeHomeState extends State<ArpegeHome> {
               key: _scaffoldKey,
               endDrawer:
                   wide ? null : const Drawer(child: PanelsView()),
-              body: Row(
+              body: SafeArea(
+                child: Row(
                 children: [
                   const ToolSidebar(),
                   Expanded(
@@ -145,6 +159,7 @@ class _ArpegeHomeState extends State<ArpegeHome> {
                       child: const PanelsView(),
                     ),
                 ],
+              ),
               ),
             );
           },

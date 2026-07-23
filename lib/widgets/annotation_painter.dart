@@ -74,7 +74,7 @@ class AnnotationPainter extends CustomPainter {
       // Ombre portée sous la page.
       canvas.drawShadow(
         Path()..addRect(slot.rect),
-        Colors.black.withOpacity(0.8),
+        Colors.black.withValues(alpha: 0.8),
         14,
         false,
       );

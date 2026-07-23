@@ -40,10 +40,14 @@ class PdfRenderer {
 
     final page = _doc!.pages[index];
     const scale = renderDpi / 72.0;
-    final w = (page.width * scale).round();
-    final h = (page.height * scale).round();
 
-    final rendered = await page.render(width: w, height: h);
+    // On doit fournir fullWidth/fullHeight : sinon pdfrx dessine la page à sa
+    // taille en points (72 dpi) dans le coin haut-gauche d'un bitmap plus grand,
+    // laissant le reste en blanc. En les passant, la page remplit tout le bitmap.
+    final fullW = page.width * scale;
+    final fullH = page.height * scale;
+
+    final rendered = await page.render(fullWidth: fullW, fullHeight: fullH);
     if (rendered == null) {
       throw StateError('Échec du rendu de la page ${index + 1}');
     }
