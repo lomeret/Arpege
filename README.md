@@ -80,9 +80,15 @@ y compris l'APK Android.
 
 ```bash
 sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
-./build-linux.sh
-# → build/linux/x64/release/bundle/arpege
+flutter config --enable-linux-desktop
+./build-linux.sh                 # ou : flutter build linux --release
+# → build/linux/x64/release/bundle/  (dossier, pas un exe seul)
 ```
+
+> Pour une **installation propre** (paquet `.deb` avec menu, icône et dépendances
+> gérées par `apt`) : `python3 installer/build_deb.py`, puis
+> `sudo apt install ./dist/arpege_*.deb`.
+> Détails et désinstallation : [installer/README.md](installer/README.md).
 
 ### Android
 
@@ -105,7 +111,13 @@ flutter build windows           # équivalent direct
 
 > ⚠️ L'app compilée n'est **pas** un `.exe` autonome : distribuer tout le dossier
 > `Release\` (exe + `flutter_windows.dll` + `pdfium.dll` + `data\`), ou générer un
-> installeur unique avec `python installer\build_installer.py` (voir `installer/`).
+> installeur unique avec `python installer\build_installer.py`.
+> Détails : [installer/README.md](installer/README.md).
+
+## Installeurs (distribution aux utilisateurs)
+
+Pour distribuer l'app packagée (installeur Windows `.exe` ou paquet Debian `.deb`),
+avec build, installation et désinstallation : voir **[installer/README.md](installer/README.md)**.
 
 ## Architecture
 

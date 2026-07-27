@@ -75,7 +75,7 @@ class PdfExporter {
           final absX = n.relativeX * pageWidth;
           final absY = n.relativeY * pageHeight;
           final symbolSize =
-              (pageWidth > pageHeight ? pageWidth : pageHeight) * 0.02;
+              (pageWidth > pageHeight ? pageWidth : pageHeight) * 0.02 * n.size;
 
           if (n.type == 'sharp') {
             _drawSharp(g, absX, absY, symbolSize, defaultRgb);

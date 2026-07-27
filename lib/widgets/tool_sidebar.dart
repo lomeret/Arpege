@@ -49,9 +49,10 @@ class ToolSidebar extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          for (final size in const [2, 4, 6])
-            _sizeButton(editor, size, size == 2 ? 6 : (size == 4 ? 10 : 14)),
+          if (_sizableTool(editor.activeTool)) ...[
+            const SizedBox(height: 10),
+            _sizeSlider(editor),
+          ],
           const Spacer(),
           Tooltip(
             message: 'Effacer toutes les annotations de la page',
@@ -101,33 +102,58 @@ class ToolSidebar extends StatelessWidget {
     );
   }
 
-  Widget _sizeButton(EditorController editor, int size, double diameter) {
-    final selected = editor.crayonSize == size;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Tooltip(
-        message: 'Épaisseur du trait : $size pt',
-        child: Material(
-          color: selected ? AppColors.surface1 : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: () => editor.setCrayonSize(size),
-            child: SizedBox(
-              width: 42,
-              height: 34,
-              child: Center(
-                child: Container(
-                  width: diameter,
-                  height: diameter,
-                  decoration: const BoxDecoration(
-                      color: AppColors.text, shape: BoxShape.circle),
-                ),
+  /// Outils dont la taille se règle au curseur (crayon = épaisseur,
+  /// symboles = échelle). L'unité et la plage dépendent de l'outil actif.
+  static bool _sizableTool(Tool? tool) =>
+      tool == Tool.crayon ||
+      tool == Tool.sharp ||
+      tool == Tool.flat ||
+      tool == Tool.indication;
+
+  /// Curseur unique, contextuel : pilote l'épaisseur du crayon ou l'échelle
+  /// des symboles selon l'outil actif, chacun conservant sa propre valeur.
+  Widget _sizeSlider(EditorController editor) {
+    final isCrayon = editor.activeTool == Tool.crayon;
+    final double min = isCrayon ? 1.0 : 0.4;
+    final double max = isCrayon ? 12.0 : 2.5;
+    final double value =
+        (isCrayon ? editor.crayonSize : editor.notationSize).clamp(min, max);
+    final String label = isCrayon
+        ? '${editor.crayonSize.round()} pt'
+        : '${(editor.notationSize * 100).round()} %';
+
+    return Column(
+      children: [
+        Text(label,
+            style: const TextStyle(color: AppColors.subtext, fontSize: 11)),
+        const SizedBox(height: 2),
+        SizedBox(
+          width: 42,
+          height: 150,
+          child: RotatedBox(
+            quarterTurns: 3,
+            child: SliderTheme(
+              data: SliderThemeData(
+                trackHeight: 3,
+                activeTrackColor: AppColors.blue,
+                inactiveTrackColor: AppColors.surface1,
+                thumbColor: AppColors.blue,
+                overlayShape: SliderComponentShape.noOverlay,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 7),
+              ),
+              child: Slider(
+                value: value,
+                min: min,
+                max: max,
+                onChanged: (v) => isCrayon
+                    ? editor.setCrayonSize(v)
+                    : editor.setNotationSize(v),
               ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

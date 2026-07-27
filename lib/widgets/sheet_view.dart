@@ -308,7 +308,7 @@ class _SheetViewState extends State<SheetView> {
                 activeStrokePoints: c.activeStrokePoints,
                 activeStrokePage: c.activeStrokePage,
                 crayonColor: c.crayonColor,
-                crayonSize: c.crayonSize.toDouble(),
+                crayonSize: c.crayonSize,
                 showLabels: _slots.length > 1,
                 repaint: c.strokeTick,
               ),

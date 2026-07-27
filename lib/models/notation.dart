@@ -27,12 +27,17 @@ class Notation {
   double relativeY;
   String? text;
 
+  /// Facteur d'échelle du symbole (1.0 = taille par défaut). Réglable par
+  /// l'utilisateur pour s'adapter à la taille des portées de chaque partition.
+  double size;
+
   Notation({
     required this.type,
     required this.page,
     required this.relativeX,
     required this.relativeY,
     this.text,
+    this.size = 1.0,
   });
 
   factory Notation.fromJson(Map<String, dynamic> j) => Notation(
@@ -41,6 +46,7 @@ class Notation {
         relativeX: (j['relative_x'] as num).toDouble(),
         relativeY: (j['relative_y'] as num).toDouble(),
         text: j['text'] as String?,
+        size: (j['size'] as num?)?.toDouble() ?? 1.0,
       );
 
   Map<String, dynamic> toJson() {
@@ -49,6 +55,7 @@ class Notation {
       'page': page,
       'relative_x': relativeX,
       'relative_y': relativeY,
+      'size': size,
       'canvas_id': null,
     };
     if (type == 'sharp') {
@@ -67,6 +74,7 @@ class Notation {
         relativeX: relativeX,
         relativeY: relativeY,
         text: text,
+        size: size,
       );
 }
 

@@ -32,7 +32,7 @@ class BookmarksPanel extends StatelessWidget {
                       onTap: () => editor.goToSourcePage(bm.page),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete_outline, size: 18),
-                        onPressed: () => editor.removeBookmark(bm.page),
+                        onPressed: () => editor.removeBookmark(bm.id),
                       ),
                     );
                   },

@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../models/score.dart';
 import '../models/setlist.dart';
 import '../services/paths.dart';
+import '../services/recent_files.dart';
 
 String _uuidHex() {
   final rnd = Random.secure();
@@ -102,10 +103,14 @@ class LibraryController extends ChangeNotifier {
   }
 
   Future<void> removeScore(String id) async {
+    final score = getScore(id);
     scores.removeWhere((s) => s.id == id);
     for (final sl in setlists) {
       sl.scoreIds.removeWhere((sid) => sid == id);
     }
+    // Retirer aussi des « fichiers récents », sinon `importPaths` au démarrage
+    // ré-ajoute la partition et la suppression paraît sans effet.
+    if (score != null) await RecentFiles.remove(score.path);
     await save();
     notifyListeners();
   }

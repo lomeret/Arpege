@@ -59,7 +59,13 @@ class EditorController extends ChangeNotifier {
 
   Tool? activeTool;
   String _crayonColorHex = _colorToHex(AppColors.defaultCrayon);
-  int crayonSize = 4;
+
+  /// Épaisseur du trait de crayon, en points PDF.
+  double crayonSize = 4;
+
+  /// Échelle appliquée aux prochains dièses/bémols/indications posés.
+  double notationSize = 1.0;
+
   bool spreadView = false;
 
   // Tracé au crayon en cours (rendu par la vue, validé à la fin).
@@ -109,6 +115,7 @@ class EditorController extends ChangeNotifier {
     await renderer.open(path);
     final loaded = await AnnotationStore.load(path);
     if (loaded != null) doc = loaded;
+    if (doc.notations.isNotEmpty) notationSize = doc.notations.last.size;
     _createdIso = await AnnotationStore.existingCreatedDate(path);
 
     await RecentFiles.add(path);
@@ -149,8 +156,13 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setCrayonSize(int size) {
+  void setCrayonSize(double size) {
     crayonSize = size;
+    notifyListeners();
+  }
+
+  void setNotationSize(double size) {
+    notationSize = size;
     notifyListeners();
   }
 
@@ -180,15 +192,23 @@ class EditorController extends ChangeNotifier {
 
   void placeSharp(int page, double relX, double relY) {
     _pushHistory();
-    doc.notations
-        .add(Notation(type: 'sharp', page: page, relativeX: relX, relativeY: relY));
+    doc.notations.add(Notation(
+        type: 'sharp',
+        page: page,
+        relativeX: relX,
+        relativeY: relY,
+        size: notationSize));
     notifyListeners();
   }
 
   void placeFlat(int page, double relX, double relY) {
     _pushHistory();
-    doc.notations
-        .add(Notation(type: 'flat', page: page, relativeX: relX, relativeY: relY));
+    doc.notations.add(Notation(
+        type: 'flat',
+        page: page,
+        relativeX: relX,
+        relativeY: relY,
+        size: notationSize));
     notifyListeners();
   }
 
@@ -200,6 +220,7 @@ class EditorController extends ChangeNotifier {
         page: page,
         relativeX: relX,
         relativeY: relY,
+        size: notationSize,
         text: text.trim()));
     notifyListeners();
   }
@@ -226,7 +247,7 @@ class EditorController extends ChangeNotifier {
       _pushHistory();
       doc.drawings
           .putIfAbsent(page, () => [])
-          .add(DrawingPath(points: points, color: _crayonColorHex, size: crayonSize.toDouble()));
+          .add(DrawingPath(points: points, color: _crayonColorHex, size: crayonSize));
       notifyListeners();
     } else {
       strokeTick.value++;
@@ -342,8 +363,8 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void removeBookmark(int page) {
-    doc.bookmarks.removeWhere((b) => b.page == page);
+  void removeBookmark(String id) {
+    doc.bookmarks.removeWhere((b) => b.id == id);
     saveAnnotations(silent: true);
     notifyListeners();
   }

@@ -123,8 +123,6 @@ class AnnotationPainter extends CustomPainter {
 
   void _paintNotations(Canvas canvas, PageSlot slot) {
     final pageHeight = _pageHeight(slot);
-    final symbolPx = pageHeight * 0.034;
-    final textPx = pageHeight * 0.022;
 
     for (final n in notations) {
       if (n.page != slot.page) continue;
@@ -136,7 +134,7 @@ class AnnotationPainter extends CustomPainter {
             text: n.type == 'sharp' ? '♯' : '♭',
             style: TextStyle(
               color: AppColors.symbol,
-              fontSize: symbolPx,
+              fontSize: pageHeight * 0.034 * n.size,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -148,7 +146,7 @@ class AnnotationPainter extends CustomPainter {
             text: n.text ?? '',
             style: TextStyle(
               color: AppColors.indication,
-              fontSize: textPx,
+              fontSize: pageHeight * 0.022 * n.size,
               fontStyle: FontStyle.italic,
             ),
           ),
