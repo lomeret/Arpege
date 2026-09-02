@@ -18,7 +18,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: "3.24.5"
+  # Doit satisfaire pubspec.lock (sdks: flutter >=3.41.0 / dart >=3.10.0),
+  # sinon `flutter pub get` échoue sur pdfrx. Aligné sur le SDK local.
+  FLUTTER_VERSION: "3.44.7"
 
 jobs:
   # --------------------------------------------------------------------------
