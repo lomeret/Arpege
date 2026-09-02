@@ -10,6 +10,7 @@ Le setup.exe final est déposé dans le dossier dist\\.
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ISS = ROOT / "installer" / "arpege.iss"
+
+
+def read_version() -> str:
+    """Lit la version depuis pubspec.yaml (sans le numéro de build « +N »)."""
+    text = (ROOT / "pubspec.yaml").read_text(encoding="utf-8")
+    m = re.search(r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+)", text, re.MULTILINE)
+    return m.group(1) if m else "1.0.0"
 
 
 def find_iscc() -> str | None:
@@ -53,7 +61,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    run([iscc, str(ISS)])
+    run([iscc, f"/DMyAppVersion={read_version()}", str(ISS)])
 
     print(f"\n✅ Installeur généré dans : {ROOT / 'dist'}")
     return 0
