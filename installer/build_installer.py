@@ -63,7 +63,8 @@ def main() -> int:
         return 1
     run([iscc, f"/DMyAppVersion={read_version()}", str(ISS)])
 
-    print(f"\n✅ Installeur généré dans : {ROOT / 'dist'}")
+    # ASCII only : la console Windows (cp1252) ne sait pas encoder les emoji.
+    print(f"\nOK - Installeur genere dans : {ROOT / 'dist'}")
     return 0
 
 

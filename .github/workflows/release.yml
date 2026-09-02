@@ -172,6 +172,10 @@ jobs:
       # puis compile installer/arpege.iss → dist/Arpege-Setup-<version>.exe
       - name: Construire l'installeur Windows
         shell: pwsh
+        env:
+          # La console du runner est en cp1252 : sans ça, un simple print
+          # accentué/emoji fait planter le script après un build réussi.
+          PYTHONUTF8: "1"
         run: python installer/build_installer.py
 
       - uses: actions/upload-artifact@v4
