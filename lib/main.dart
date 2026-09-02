@@ -70,6 +70,24 @@ class ArpegeHome extends StatefulWidget {
 class _ArpegeHomeState extends State<ArpegeHome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  /// Panneaux de droite (Bibliothèque / Signets / Setlists) en mode large.
+  /// En mode étroit ils vivent dans l'endDrawer, qui a sa propre fermeture.
+  bool _panelsOpen = true;
+
+  void _togglePanels(bool wide) {
+    if (wide) {
+      setState(() => _panelsOpen = !_panelsOpen);
+    } else {
+      final scaffold = _scaffoldKey.currentState;
+      if (scaffold == null) return;
+      if (scaffold.isEndDrawerOpen) {
+        Navigator.of(context).maybePop();
+      } else {
+        scaffold.openEndDrawer();
+      }
+    }
+  }
+
   Map<ShortcutActivator, VoidCallback> _shortcuts(EditorController editor) => {
         const SingleActivator(LogicalKeyboardKey.keyO, control: true): () =>
             pickAndOpenPdf(context, editor),
@@ -101,6 +119,8 @@ class _ArpegeHomeState extends State<ArpegeHome> {
         const SingleActivator(LogicalKeyboardKey.end): editor.goLast,
         const SingleActivator(LogicalKeyboardKey.escape): () =>
             editor.setTool(null),
+        const SingleActivator(LogicalKeyboardKey.f9): () =>
+            _togglePanels(MediaQuery.sizeOf(context).width >= 900),
         const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): () =>
             editor.stepSong(1),
         const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () =>
@@ -128,8 +148,13 @@ class _ArpegeHomeState extends State<ArpegeHome> {
             final wide = constraints.maxWidth >= 900;
             return Scaffold(
               key: _scaffoldKey,
-              endDrawer:
-                  wide ? null : const Drawer(child: PanelsView()),
+              endDrawer: wide
+                  ? null
+                  : Drawer(
+                      child: PanelsView(
+                        onClose: () => Navigator.of(context).maybePop(),
+                      ),
+                    ),
               body: SafeArea(
                 child: Row(
                 children: [
@@ -138,17 +163,15 @@ class _ArpegeHomeState extends State<ArpegeHome> {
                     child: Column(
                       children: [
                         ArpegeToolbar(
-                          onTogglePanels: wide
-                              ? null
-                              : () =>
-                                  _scaffoldKey.currentState?.openEndDrawer(),
+                          onTogglePanels: () => _togglePanels(wide),
+                          panelsOpen: !wide || _panelsOpen,
                         ),
                         const Expanded(child: SheetView()),
                         const _StatusBar(),
                       ],
                     ),
                   ),
-                  if (wide)
+                  if (wide && _panelsOpen)
                     Container(
                       width: 320,
                       decoration: const BoxDecoration(
@@ -156,7 +179,9 @@ class _ArpegeHomeState extends State<ArpegeHome> {
                         border: Border(
                             left: BorderSide(color: AppColors.surface0)),
                       ),
-                      child: const PanelsView(),
+                      child: PanelsView(
+                        onClose: () => setState(() => _panelsOpen = false),
+                      ),
                     ),
                 ],
               ),
@@ -171,26 +196,48 @@ class _ArpegeHomeState extends State<ArpegeHome> {
 
 /// Panneaux latéraux en onglets (Bibliothèque / Signets / Setlists).
 class PanelsView extends StatelessWidget {
-  const PanelsView({super.key});
+  /// Ferme le panneau (repli latéral en mode large, fermeture du drawer sinon).
+  final VoidCallback? onClose;
+  const PanelsView({super.key, this.onClose});
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 3,
       child: Column(
-        children: const [
-          SizedBox(height: 8),
-          TabBar(
-            labelColor: AppColors.blue,
-            unselectedLabelColor: AppColors.subtext,
-            indicatorColor: AppColors.blue,
-            tabs: [
-              Tab(text: 'Bibliothèque'),
-              Tab(text: 'Signets'),
-              Tab(text: 'Setlists'),
+        children: [
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              // Libellés compactés : la croix prend de la place sur 320 px et
+              // « Bibliothèque » est le plus long des trois onglets.
+              const Expanded(
+                child: TabBar(
+                  labelColor: AppColors.blue,
+                  unselectedLabelColor: AppColors.subtext,
+                  indicatorColor: AppColors.blue,
+                  labelPadding: EdgeInsets.symmetric(horizontal: 4),
+                  labelStyle:
+                      TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  unselectedLabelStyle: TextStyle(fontSize: 13),
+                  tabs: [
+                    Tab(text: 'Bibliothèque'),
+                    Tab(text: 'Signets'),
+                    Tab(text: 'Setlists'),
+                  ],
+                ),
+              ),
+              if (onClose != null)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Fermer le panneau (F9)',
+                  visualDensity: VisualDensity.compact,
+                  color: AppColors.subtext,
+                  onPressed: onClose,
+                ),
             ],
           ),
-          Expanded(
+          const Expanded(
             child: TabBarView(
               children: [
                 LibraryPanel(),

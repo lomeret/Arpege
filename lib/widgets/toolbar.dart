@@ -10,7 +10,9 @@ import 'page_order_dialog.dart';
 /// Barre d'outils supérieure (port de `build_toolbar` + entrées de menu).
 class ArpegeToolbar extends StatelessWidget {
   final VoidCallback? onTogglePanels;
-  const ArpegeToolbar({super.key, this.onTogglePanels});
+  /// État courant des panneaux de droite (allume le bouton bascule).
+  final bool panelsOpen;
+  const ArpegeToolbar({super.key, this.onTogglePanels, this.panelsOpen = true});
 
   Future<void> _managePages(BuildContext context, EditorController editor) async {
     if (!editor.renderer.isOpen) return;
@@ -118,7 +120,14 @@ class ArpegeToolbar extends StatelessWidget {
               ],
             ),
             if (onTogglePanels != null)
-              _iconBtn(Icons.view_sidebar, 'Panneaux', onTogglePanels),
+              _ToggleBtn(
+                icon: Icons.view_sidebar,
+                tip: panelsOpen
+                    ? 'Masquer les panneaux (F9)'
+                    : 'Afficher les panneaux (F9)',
+                selected: panelsOpen,
+                onTap: onTogglePanels,
+              ),
           ],
         ),
       ),
