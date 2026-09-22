@@ -61,6 +61,12 @@ def read_version() -> str:
     return m.group(1) if m else "1.0.0"
 
 
+def read_build_number() -> str | None:
+    """Numéro de build (CI : nombre de commits sur la branche, cf. release.yml).
+    Absent en local -> pas de révision Debian, comportement inchangé."""
+    return os.environ.get("ARPEGE_BUILD_NUMBER") or None
+
+
 def desktop_entry() -> str:
     return (
         "[Desktop Entry]\n"
@@ -169,20 +175,25 @@ def main() -> int:
         return 1
 
     version = read_version()
+    build = read_build_number()
+    # Révision Debian (format standard upstream_version-debian_revision) quand
+    # un build number CI est fourni, sinon juste x.y.z.
+    full_version = f"{version}-{build}" if build else version
 
     # 1) Build Linux release.
-    run("flutter build linux --release", cwd=ROOT, shell=True)
+    build_flag = f" --build-number={build}" if build else ""
+    run(f"flutter build linux --release{build_flag}", cwd=ROOT, shell=True)
     if not BUNDLE.exists():
         print(f"ERREUR : bundle introuvable après le build : {BUNDLE}",
               file=sys.stderr)
         return 1
 
     # 2) Arborescence du paquet.
-    pkgroot = build_tree(version)
+    pkgroot = build_tree(full_version)
 
     # 3) Construction du .deb (--root-owner-group : fichiers root:root sans sudo).
     DIST.mkdir(exist_ok=True)
-    out = DIST / f"{BINARY}_{version}_{ARCH}.deb"
+    out = DIST / f"{BINARY}_{full_version}_{ARCH}.deb"
     run(["dpkg-deb", "--root-owner-group", "--build", str(pkgroot), str(out)])
 
     print(f"\n✅ Paquet généré : {out}")

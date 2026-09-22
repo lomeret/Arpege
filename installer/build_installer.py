@@ -10,6 +10,7 @@ Le setup.exe final est déposé dans le dossier dist\\.
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -25,6 +26,12 @@ def read_version() -> str:
     text = (ROOT / "pubspec.yaml").read_text(encoding="utf-8")
     m = re.search(r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+)", text, re.MULTILINE)
     return m.group(1) if m else "1.0.0"
+
+
+def read_build_number() -> str | None:
+    """Numéro de build (CI : nombre de commits sur la branche, cf. release.yml).
+    Absent en local -> pas de 4ᵉ segment de version, comportement inchangé."""
+    return os.environ.get("ARPEGE_BUILD_NUMBER") or None
 
 
 def find_iscc() -> str | None:
@@ -49,8 +56,11 @@ def run(cmd, **kwargs) -> None:
 
 
 def main() -> int:
+    build = read_build_number()
+
     # 1) Build Windows release (flutter est un .bat -> shell=True sous Windows).
-    run("flutter build windows --release", cwd=ROOT, shell=True)
+    build_flag = f" --build-number={build}" if build else ""
+    run(f"flutter build windows --release{build_flag}", cwd=ROOT, shell=True)
 
     # 2) Packaging Inno Setup.
     iscc = find_iscc()
@@ -61,7 +71,10 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    run([iscc, f"/DMyAppVersion={read_version()}", str(ISS)])
+    # 4 segments (x.y.z.build) quand un build number CI est fourni, sinon x.y.z.
+    version = read_version()
+    full_version = f"{version}.{build}" if build else version
+    run([iscc, f"/DMyAppVersion={full_version}", str(ISS)])
 
     # ASCII only : la console Windows (cp1252) ne sait pas encoder les emoji.
     print(f"\nOK - Installeur genere dans : {ROOT / 'dist'}")

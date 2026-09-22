@@ -30,26 +30,39 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.m.outputs.version }}
+      build: ${{ steps.m.outputs.build }}
       tag: ${{ steps.m.outputs.tag }}
       title: ${{ steps.m.outputs.title }}
       prerelease: ${{ steps.m.outputs.prerelease }}
       publish: ${{ steps.m.outputs.publish }}
     steps:
+      # fetch-depth: 0 = historique complet, nécessaire à `git rev-list --count`
+      # ci-dessous (un clone superficiel donnerait toujours 1).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Déterminer version et tag
+      - name: Déterminer version, build number et tag
         id: m
         env:
           EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
-          RUN: ${{ github.run_number }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           set -euo pipefail
-          # Version applicative : pubspec.yaml, sans le « +build ».
+          # Version applicative : pubspec.yaml, sans le « +build » (bump manuel,
+          # décision humaine).
           VERSION=$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' pubspec.yaml | head -n1)
           VERSION=${VERSION:-0.0.0}
+
+          # Build number : nombre de commits atteignant ce ref. Déterministe et
+          # monotone (contrairement à github.run_number, qui bouge aussi sur un
+          # simple re-run ou un dispatch manuel sans nouveau commit). Sert à la
+          # fois au tag de release et au numéro embarqué dans les binaires
+          # (APK versionCode, AppVersion Windows, révision Debian).
+          BUILD=$(git rev-list --count HEAD)
 
           case "$EVENT" in
             push)
@@ -58,32 +71,33 @@ jobs:
                 TAG="$REF_NAME"; TITLE="Arpège $REF_NAME"; PRE=false
               else
                 # Chaque commit sur main : build daté, marqué pre-release.
-                TAG="v${VERSION}-build.${RUN}"; TITLE="Arpège ${VERSION} (build ${RUN})"; PRE=true
+                TAG="v${VERSION}-build.${BUILD}"; TITLE="Arpège ${VERSION} (build ${BUILD})"; PRE=true
               fi
               PUBLISH=true
               ;;
             pull_request)
-              TAG="pr-${PR_NUMBER}-build.${RUN}"
-              TITLE="Arpège — PR #${PR_NUMBER} (build ${RUN})"
+              TAG="pr-${PR_NUMBER}-build.${BUILD}"
+              TITLE="Arpège — PR #${PR_NUMBER} (build ${BUILD})"
               PRE=true
               # Une PR issue d'un fork n'a qu'un token en lecture seule :
               # on compile quand même, mais on ne peut pas publier de release.
               if [ "$PR_REPO" = "$GITHUB_REPOSITORY" ]; then PUBLISH=true; else PUBLISH=false; fi
               ;;
             *)
-              TAG="v${VERSION}-manual.${RUN}"; TITLE="Arpège ${VERSION} (manuel ${RUN})"
+              TAG="v${VERSION}-manual.${BUILD}"; TITLE="Arpège ${VERSION} (manuel ${BUILD})"
               PRE=true; PUBLISH=true
               ;;
           esac
 
           {
             echo "version=$VERSION"
+            echo "build=$BUILD"
             echo "tag=$TAG"
             echo "title=$TITLE"
             echo "prerelease=$PRE"
             echo "publish=$PUBLISH"
           } >> "$GITHUB_OUTPUT"
-          echo "→ tag=$TAG prerelease=$PRE publish=$PUBLISH"
+          echo "→ tag=$TAG build=$BUILD prerelease=$PRE publish=$PUBLISH"
 
   # --------------------------------------------------------------------------
   # Linux : .deb (installer/build_deb.py) + Android : .apk
@@ -120,16 +134,20 @@ jobs:
       # build_deb.py fait lui-même `flutter build linux --release`,
       # puis assemble l'arbo Debian et appelle dpkg-deb → dist/*.deb
       - name: Construire le paquet .deb
+        env:
+          ARPEGE_BUILD_NUMBER: ${{ needs.meta.outputs.build }}
         run: python3 installer/build_deb.py
 
+      # --build-number : versionCode Android, doit être un entier croissant
+      # (exigé par le Play Store) — le compte de commits s'y prête bien.
       - name: Construire l'APK Android
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number=${{ needs.meta.outputs.build }}
 
       - name: Renommer l'APK
         run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk \
-             "dist/arpege-${{ needs.meta.outputs.version }}.apk"
+             "dist/arpege-${{ needs.meta.outputs.version }}+${{ needs.meta.outputs.build }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -176,6 +194,7 @@ jobs:
           # La console du runner est en cp1252 : sans ça, un simple print
           # accentué/emoji fait planter le script après un build réussi.
           PYTHONUTF8: "1"
+          ARPEGE_BUILD_NUMBER: ${{ needs.meta.outputs.build }}
         run: python installer/build_installer.py
 
       - uses: actions/upload-artifact@v4

@@ -3,7 +3,12 @@
 ; Les chemins sont relatifs à l'emplacement de ce fichier (dossier installer\).
 
 #define MyAppName "Arpège"
-#define MyAppVersion "1.0.0"
+; Version : surchargeable par ISCC /DMyAppVersion=x.y.z[.build] (voir
+; build_installer.py, qui la lit dans pubspec.yaml et ajoute le numéro de
+; build CI si présent). Valeur de repli si compilé à la main.
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "Louis Meret"
 #define MyAppExeName "arpege.exe"
 
