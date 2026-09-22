@@ -126,6 +126,11 @@ jobs:
 
       - run: flutter pub get
 
+      # Bloquant : logique pure (historique, sérialisation JSON, recherche…),
+      # exécutée une seule fois ici plutôt que dans chaque job de build.
+      - name: Tests unitaires
+        run: flutter test
+
       # Informatif : ne doit pas bloquer la publication d'un build.
       - name: Analyze
         continue-on-error: true

@@ -115,6 +115,17 @@ class _ArpegeHomeState extends State<ArpegeHome> {
         const SingleActivator(LogicalKeyboardKey.arrowRight): editor.nextPage,
         const SingleActivator(LogicalKeyboardKey.pageUp): editor.prevPage,
         const SingleActivator(LogicalKeyboardKey.pageDown): editor.nextPage,
+        // Pédales tourne-pages Bluetooth/USB (AirTurn, PageFlip, iRig
+        // BlueTurn, Donner…) : elles s'annoncent comme un clavier HID mais
+        // leur mapping par défaut varie selon le modèle — on couvre les
+        // configurations les plus courantes en plus des flèches gauche/droite
+        // et Page Up/Down déjà gérées ci-dessus.
+        const SingleActivator(LogicalKeyboardKey.arrowUp): editor.prevPage,
+        const SingleActivator(LogicalKeyboardKey.arrowDown): editor.nextPage,
+        const SingleActivator(LogicalKeyboardKey.space): editor.nextPage,
+        const SingleActivator(LogicalKeyboardKey.space, shift: true):
+            editor.prevPage,
+        const SingleActivator(LogicalKeyboardKey.backspace): editor.prevPage,
         const SingleActivator(LogicalKeyboardKey.home): editor.goFirst,
         const SingleActivator(LogicalKeyboardKey.end): editor.goLast,
         const SingleActivator(LogicalKeyboardKey.escape): () =>
