@@ -23,7 +23,7 @@ class ArpegeToolbar extends StatelessWidget {
       context,
       pageCount: editor.renderer.pageCount,
       sequence: List.of(seq),
-      thumbProvider: editor.renderer.renderPage,
+      thumbProvider: editor.renderer.renderThumbnail,
     );
     if (result != null) editor.applyPageSequence(result);
   }
@@ -79,13 +79,22 @@ class ArpegeToolbar extends StatelessWidget {
             _iconBtn(Icons.redo, 'Redo (Ctrl+Y)',
                 editor.history.canRedo ? editor.redo : null),
             const SizedBox(width: 24),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.green,
-                  foregroundColor: AppColors.crust),
-              icon: const Icon(Icons.save, size: 18),
-              label: const Text('Save'),
-              onPressed: () => saveAnnotationsWithFeedback(context, editor),
+            Tooltip(
+              message: editor.hasUnsavedChanges
+                  ? 'Unsaved changes — save now (Ctrl+S)'
+                  : 'Annotations saved (Ctrl+S)',
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: editor.hasUnsavedChanges
+                        ? AppColors.peach
+                        : AppColors.green,
+                    foregroundColor: AppColors.crust),
+                icon: Icon(
+                    editor.hasUnsavedChanges ? Icons.save_as : Icons.save,
+                    size: 18),
+                label: const Text('Save'),
+                onPressed: () => saveAnnotationsWithFeedback(context, editor),
+              ),
             ),
             const SizedBox(width: 6),
             OutlinedButton.icon(

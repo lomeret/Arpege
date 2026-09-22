@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/logger.dart';
 import '../state/editor_controller.dart';
 import '../theme.dart';
 import 'annotation_painter.dart';
@@ -28,7 +29,15 @@ class _SheetViewState extends State<SheetView> {
   Size _canvasSize = Size.zero;
   Size _viewport = Size.zero;
   String _key = '';
-  bool _building = false;
+
+  /// Identifies the running rebuild. A newer one supersedes the older: the
+  /// previous guard simply dropped concurrent requests, which lost page
+  /// turns made while a page was still rendering.
+  int _generation = 0;
+
+  /// Document the current slots belong to, to know when their images are
+  /// about to be disposed by the renderer.
+  String? _slotsDocument;
 
   // Active slot while drawing/erasing.
   PageSlot? _activeSlot;
@@ -65,26 +74,25 @@ class _SheetViewState extends State<SheetView> {
   }
 
   Future<void> _rebuildSlots({bool fit = false}) async {
-    if (_building) return;
-    _building = true;
+    final generation = ++_generation;
     _key = _computeKey();
 
-    if (!c.renderer.isOpen) {
-      setState(() {
-        _slots = [];
-        _canvasSize = Size.zero;
-      });
-      _building = false;
+    // The slots hold ui.Image handles owned by the renderer's cache. When
+    // the document changes, those images are disposed — let go of them now,
+    // synchronously, before the next frame can paint them.
+    if (c.currentPdfPath != _slotsDocument) {
+      _slotsDocument = c.currentPdfPath;
+      _clearSlots();
+    }
+
+    if (!c.renderer.isOpen || c.currentPdfPath == null) {
+      _clearSlots();
       return;
     }
 
     final seq = c.effectiveSequence;
     if (seq.isEmpty) {
-      setState(() {
-        _slots = [];
-        _canvasSize = Size.zero;
-      });
-      _building = false;
+      _clearSlots();
       return;
     }
 
@@ -106,7 +114,15 @@ class _SheetViewState extends State<SheetView> {
     double yOffset = 0;
     double maxW = 0;
     for (final (page, y0, y1) in specs) {
-      final ui.Image image = await c.renderer.renderPage(page);
+      final ui.Image image;
+      try {
+        image = await c.renderer.renderPage(page);
+      } catch (e, st) {
+        logError('Could not render page ${page + 1}', e, st);
+        return;
+      }
+      // A newer rebuild (page turn, document change) has taken over.
+      if (generation != _generation || !mounted) return;
       final W = image.width.toDouble();
       final H = image.height.toDouble();
       final bandH = (y1 - y0) * H;
@@ -116,18 +132,27 @@ class _SheetViewState extends State<SheetView> {
       if (W > maxW) maxW = W;
     }
 
-    if (!mounted) {
-      _building = false;
-      return;
-    }
+    if (generation != _generation || !mounted) return;
     setState(() {
       _slots = slots;
       _canvasSize = Size(maxW, yOffset - _kSpreadGap);
     });
-    _building = false;
     if (fit) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
     }
+  }
+
+  void _clearSlots() {
+    if (_slots.isEmpty && _canvasSize.isEmpty) return;
+    if (!mounted) {
+      _slots = [];
+      _canvasSize = Size.zero;
+      return;
+    }
+    setState(() {
+      _slots = [];
+      _canvasSize = Size.zero;
+    });
   }
 
   // ---- Zoom / fit ----------------------------------------------------
@@ -280,7 +305,9 @@ class _SheetViewState extends State<SheetView> {
       builder: (context, constraints) {
         _viewport = Size(constraints.maxWidth, constraints.maxHeight);
 
-        if (!c.renderer.isOpen) return const _Placeholder();
+        if (!c.renderer.isOpen || c.currentPdfPath == null) {
+          return const _Placeholder();
+        }
         if (!hasContent) {
           return const Center(
             child: CircularProgressIndicator(color: AppColors.blue),

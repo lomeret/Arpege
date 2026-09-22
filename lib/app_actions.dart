@@ -4,7 +4,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
-import 'services/recent_files.dart';
 import 'state/editor_controller.dart';
 
 void _toast(BuildContext context, String message) {
@@ -91,9 +90,9 @@ Future<void> exportCurrentPdf(
 /// Shows the list of recent files and opens the chosen one.
 Future<void> showRecentFilesDialog(
     BuildContext context, EditorController editor) async {
-  final recents = await RecentFiles.load();
+  final recents = await editor.recentFiles.load();
   if (!context.mounted) return;
-  await showDialog<void>(
+  final chosen = await showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Recent files'),
@@ -111,8 +110,7 @@ Future<void> showRecentFilesDialog(
                       subtitle: Text(path,
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                       onTap: () {
-                        Navigator.of(ctx).pop();
-                        editor.openPdf(path);
+                        Navigator.of(ctx).pop(path);
                       },
                     ),
                 ],
@@ -125,6 +123,12 @@ Future<void> showRecentFilesDialog(
       ],
     ),
   );
+  if (chosen == null || !context.mounted) return;
+  try {
+    await editor.openPdf(chosen);
+  } catch (e) {
+    if (context.mounted) _toast(context, 'Could not open the PDF: $e');
+  }
 }
 
 /// Whether exporting through a native file picker is plausible (desktop).

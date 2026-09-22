@@ -4,7 +4,10 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
 import 'app_actions.dart';
-import 'services/recent_files.dart';
+import 'services/annotation_repository.dart';
+import 'services/library_repository.dart';
+import 'services/paths.dart';
+import 'services/recent_files_repository.dart';
 import 'state/editor_controller.dart';
 import 'state/library_controller.dart';
 import 'theme.dart';
@@ -30,16 +33,38 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
   pdfrxFlutterInitialize(); // required by pdfrx 2.x before any use
-  final library = LibraryController();
+
+  // Storage is wired here and nowhere else: the controllers only ever see
+  // the repository interfaces, which is what makes them testable.
+  final locations = AppPaths();
+  final recentFiles = FileRecentFilesRepository(locations: locations);
+  final annotations = FileAnnotationRepository(locations: locations);
+  final library = LibraryController(
+    repository: FileLibraryRepository(locations: locations),
+    recentFiles: recentFiles,
+  );
   await library.load();
   // Migration: import the old recent files into the library.
-  await library.importPaths(await RecentFiles.load());
-  runApp(ArpegeApp(library: library));
+  await library.importRecentFiles();
+
+  runApp(ArpegeApp(
+    library: library,
+    annotations: annotations,
+    recentFiles: recentFiles,
+  ));
 }
 
 class ArpegeApp extends StatelessWidget {
   final LibraryController library;
-  const ArpegeApp({super.key, required this.library});
+  final AnnotationRepository annotations;
+  final RecentFilesRepository recentFiles;
+
+  const ArpegeApp({
+    super.key,
+    required this.library,
+    required this.annotations,
+    required this.recentFiles,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +72,11 @@ class ArpegeApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<LibraryController>.value(value: library),
         ChangeNotifierProvider<EditorController>(
-          create: (_) => EditorController(library),
+          create: (_) => EditorController(
+            library,
+            annotations: annotations,
+            recentFiles: recentFiles,
+          ),
         ),
       ],
       child: MaterialApp(
@@ -69,6 +98,51 @@ class ArpegeHome extends StatefulWidget {
 
 class _ArpegeHomeState extends State<ArpegeHome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  LibraryController? _library;
+  EditorController? _editor;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_library != null) return;
+    // Storage failures used to be swallowed; they are now reported by the
+    // controllers and shown here, once each.
+    _library = context.read<LibraryController>()..addListener(_showErrors);
+    _editor = context.read<EditorController>()..addListener(_showErrors);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showErrors());
+  }
+
+  @override
+  void dispose() {
+    _library?.removeListener(_showErrors);
+    _editor?.removeListener(_showErrors);
+    super.dispose();
+  }
+
+  void _showErrors() {
+    if (!mounted) return;
+    final library = _library;
+    if (library != null && library.lastError != null) {
+      final message = library.lastError!;
+      library.clearError();
+      _showError(message);
+    }
+    final editor = _editor;
+    if (editor != null && editor.lastError != null) {
+      final message = editor.lastError!;
+      editor.clearError();
+      _showError(message);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: AppColors.red,
+      duration: const Duration(seconds: 6),
+    ));
+  }
 
   /// Right-hand panels (Library / Bookmarks / Setlists) in wide mode.
   /// In narrow mode they live in the endDrawer, which has its own close action.
@@ -278,6 +352,14 @@ class _StatusBar extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Row(
         children: [
+          if (editor.hasUnsavedChanges)
+            const Padding(
+              padding: EdgeInsets.only(right: 10),
+              child: Text(
+                '● unsaved',
+                style: TextStyle(color: AppColors.peach, fontSize: 12),
+              ),
+            ),
           Expanded(
             child: Text(
               editor.statusHint,

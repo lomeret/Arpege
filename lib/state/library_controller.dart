@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -7,8 +6,10 @@ import 'package:path/path.dart' as p;
 
 import '../models/score.dart';
 import '../models/setlist.dart';
-import '../services/paths.dart';
-import '../services/recent_files.dart';
+import '../services/json_file.dart';
+import '../services/library_repository.dart';
+import '../services/logger.dart';
+import '../services/recent_files_repository.dart';
 
 String _uuidHex() {
   final rnd = Random.secure();
@@ -19,40 +20,58 @@ String _uuidHex() {
 String _nowIso() => DateTime.now().toIso8601String();
 
 /// Central library: scores, metadata and setlists.
-/// Port of `features/library.py`, exposed as a ChangeNotifier.
 class LibraryController extends ChangeNotifier {
+  LibraryController({
+    LibraryRepository? repository,
+    RecentFilesRepository? recentFiles,
+  })  : _repository = repository ?? FileLibraryRepository(),
+        _recentFiles = recentFiles ?? FileRecentFilesRepository();
+
+  final LibraryRepository _repository;
+  final RecentFilesRepository _recentFiles;
+
   List<Score> scores = [];
   List<Setlist> setlists = [];
 
+  /// Last storage failure, for the UI to show. Cleared by [clearError].
+  String? get lastError => _lastError;
+  String? _lastError;
+
+  void clearError() {
+    if (_lastError == null) return;
+    _lastError = null;
+    notifyListeners();
+  }
+
+  void _reportError(String message, Object error) {
+    logError(message, error);
+    _lastError = error is StorageException ? '$message: ${error.message}' : message;
+  }
+
   Future<void> load() async {
     try {
-      final file = await AppPaths.libraryFile();
-      if (await file.exists()) {
-        final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-        scores = ((data['scores'] as List?) ?? const [])
-            .map((s) => Score.fromJson(Map<String, dynamic>.from(s as Map)))
-            .toList();
-        setlists = ((data['setlists'] as List?) ?? const [])
-            .map((s) => Setlist.fromJson(Map<String, dynamic>.from(s as Map)))
-            .toList();
-      }
-    } catch (_) {
+      final data = await _repository.load();
+      scores = List.of(data.scores);
+      setlists = List.of(data.setlists);
+    } catch (e, st) {
+      // The repository has already moved the unreadable file aside, so
+      // nothing is lost — but say so instead of showing an empty library as
+      // if it were normal.
       scores = [];
       setlists = [];
+      logError('Could not load the library', e, st);
+      _reportError('Library could not be loaded, a copy was kept aside', e);
     }
     notifyListeners();
   }
 
   Future<void> save() async {
     try {
-      final file = await AppPaths.libraryFile();
-      final data = {
-        'version': 1,
-        'scores': scores.map((s) => s.toJson()).toList(),
-        'setlists': setlists.map((s) => s.toJson()).toList(),
-      };
-      await file.writeAsString(const JsonEncoder.withIndent('  ').convert(data));
-    } catch (_) {}
+      await _repository.save(LibraryData(scores: scores, setlists: setlists));
+    } catch (e, st) {
+      logError('Could not save the library', e, st);
+      _reportError('Library could not be saved', e);
+    }
   }
 
   // ---- Scores ----------------------------------------------------
@@ -110,7 +129,13 @@ class LibraryController extends ChangeNotifier {
     }
     // Also remove it from "recent files", otherwise `importPaths` re-adds
     // the score on the next startup and the removal looks like it did nothing.
-    if (score != null) await RecentFiles.remove(score.path);
+    if (score != null) {
+      try {
+        await _recentFiles.remove(score.path);
+      } catch (e, st) {
+        logError('Could not update the recent files list', e, st);
+      }
+    }
     await save();
     notifyListeners();
   }
@@ -203,6 +228,15 @@ class LibraryController extends ChangeNotifier {
   }
 
   // ---- Migration -----------------------------------------------------
+
+  /// Imports the legacy "recent files" list into the library.
+  Future<void> importRecentFiles() async {
+    try {
+      await importPaths(await _recentFiles.load());
+    } catch (e, st) {
+      logError('Could not import the recent files', e, st);
+    }
+  }
 
   Future<void> importPaths(List<String> paths) async {
     var changed = false;

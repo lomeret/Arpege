@@ -125,14 +125,26 @@ package), with build, install and uninstall instructions: see
 
 ```
 lib/
-  main.dart              entry point, providers, responsive layout, shortcuts
+  main.dart              entry point, storage wiring, layout, shortcuts
   theme.dart              dark theme (Catppuccin Mocha)
   models/                Score, Setlist, Notation/DrawingPath, Bookmark, AnnotationDocument
-  services/              paths, library, recent files, annotations, PDF export
+  services/              storage repositories (annotations, library, recent files),
+                         atomic JSON I/O, paths, logging, PDF export
   state/                 LibraryController, EditorController, HistoryManager
-  pdf/pdf_renderer.dart  page rendering via pdfrx
+  pdf/pdf_renderer.dart  page rendering via pdfrx, behind bounded LRU caches
   widgets/               score view (zoom/pan/drawing), toolbars, panels, dialogs
 ```
+
+Storage goes through repository interfaces (`AnnotationRepository`,
+`LibraryRepository`, `RecentFilesRepository`) that are wired once in
+`main()` and injected into the controllers. Every write is atomic
+(`.tmp` + rename), a file that cannot be parsed is moved aside rather than
+overwritten, and failures are reported to the user instead of being
+swallowed.
+
+The editor tracks unsaved changes and flushes them on its own before
+switching scores, when the app goes to the background, and when the window
+is closed — so annotations are not lost if the OS kills the app.
 
 Main dependencies: `pdfrx` (rendering), `syncfusion_flutter_pdf` (export),
 `provider` (state), `path_provider`, `file_picker`.
