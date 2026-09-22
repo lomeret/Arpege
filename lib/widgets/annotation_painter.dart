@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 import '../models/notation.dart';
 import '../theme.dart';
 
-/// Une bande de page affichée dans la scène (vue simple ou moitié en vue double).
-/// Reprend la notion de « slot » de l'ancien `rebuild_scene`.
+/// A page band shown in the scene (single view, or half in spread view).
+/// Reuses the "slot" notion from the old `rebuild_scene`.
 class PageSlot {
   final int page;
-  final double y0; // portion verticale de la page couverte (0–1)
+  final double y0; // vertical portion of the page covered (0-1)
   final double y1;
-  final Rect rect; // rectangle en coordonnées canvas
+  final Rect rect; // rectangle in canvas coordinates
   final ui.Image image;
 
   PageSlot({
@@ -24,13 +24,13 @@ class PageSlot {
 
   double get band => y1 - y0;
 
-  /// Coordonnées relatives page (0–1) → coordonnées canvas dans la bande.
+  /// Relative page coordinates (0-1) -> canvas coordinates within the band.
   Offset relToCanvas(double relX, double relY) => Offset(
         rect.left + relX * rect.width,
         rect.top + (relY - y0) / band * rect.height,
       );
 
-  /// Coordonnées canvas → coordonnées relatives page (0–1).
+  /// Canvas coordinates -> relative page coordinates (0-1).
   Offset canvasToRel(Offset p) => Offset(
         (p.dx - rect.left) / rect.width,
         y0 + (p.dy - rect.top) / rect.height * band,
@@ -39,7 +39,7 @@ class PageSlot {
   bool contains(Offset p) => rect.contains(p);
 }
 
-/// Peint les pages PDF puis les annotations (symboles + tracés) par-dessus.
+/// Paints the PDF pages then the annotations (symbols + strokes) on top.
 class AnnotationPainter extends CustomPainter {
   final List<PageSlot> slots;
   final List<Notation> notations;
@@ -71,7 +71,7 @@ class AnnotationPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final slot in slots) {
-      // Ombre portée sous la page.
+      // Drop shadow under the page.
       canvas.drawShadow(
         Path()..addRect(slot.rect),
         Colors.black.withValues(alpha: 0.8),
@@ -79,7 +79,7 @@ class AnnotationPainter extends CustomPainter {
         false,
       );
 
-      // Image de la page (sous-rectangle vertical si vue double).
+      // Page image (vertical sub-rectangle in spread view).
       final H = slot.image.height.toDouble();
       final W = slot.image.width.toDouble();
       final src = Rect.fromLTWH(0, slot.y0 * H, W, slot.band * H);
@@ -90,12 +90,12 @@ class AnnotationPainter extends CustomPainter {
         Paint()..filterQuality = FilterQuality.high,
       );
 
-      // Étiquette de page (vue double uniquement).
+      // Page label (spread view only).
       if (showLabels) {
         _paintLabel(canvas, slot);
       }
 
-      // Annotations rognées à la bande.
+      // Annotations clipped to the band.
       canvas.save();
       canvas.clipRect(slot.rect);
       _paintNotations(canvas, slot);
@@ -165,7 +165,7 @@ class AnnotationPainter extends CustomPainter {
     for (final path in pagePaths) {
       _paintStroke(canvas, slot, path.points, _hexToColor(path.color), path.size);
     }
-    // Tracé en cours.
+    // Stroke in progress.
     if (activeStrokePage == slot.page && activeStrokePoints != null) {
       _paintStroke(canvas, slot, activeStrokePoints!, crayonColor, crayonSize);
     }
@@ -174,7 +174,7 @@ class AnnotationPainter extends CustomPainter {
   void _paintStroke(Canvas canvas, PageSlot slot, List<StrokePoint> points,
       Color color, double size) {
     if (points.length < 2) return;
-    // Épaisseur en points PDF convertie à l'échelle de la page rendue.
+    // Width in PDF points, converted to the scale of the rendered page.
     final width = size * slot.rect.width / 595.0;
     final paint = Paint()
       ..color = color

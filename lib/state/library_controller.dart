@@ -18,8 +18,8 @@ String _uuidHex() {
 
 String _nowIso() => DateTime.now().toIso8601String();
 
-/// Bibliothèque centrale : partitions, métadonnées et setlists.
-/// Port de `features/library.py`, exposé comme ChangeNotifier.
+/// Central library: scores, metadata and setlists.
+/// Port of `features/library.py`, exposed as a ChangeNotifier.
 class LibraryController extends ChangeNotifier {
   List<Score> scores = [];
   List<Setlist> setlists = [];
@@ -55,7 +55,7 @@ class LibraryController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  // ---- Partitions ----------------------------------------------------
+  // ---- Scores ----------------------------------------------------
 
   Score? getScore(String id) {
     for (final s in scores) {
@@ -108,14 +108,14 @@ class LibraryController extends ChangeNotifier {
     for (final sl in setlists) {
       sl.scoreIds.removeWhere((sid) => sid == id);
     }
-    // Retirer aussi des « fichiers récents », sinon `importPaths` au démarrage
-    // ré-ajoute la partition et la suppression paraît sans effet.
+    // Also remove it from "recent files", otherwise `importPaths` re-adds
+    // the score on the next startup and the removal looks like it did nothing.
     if (score != null) await RecentFiles.remove(score.path);
     await save();
     notifyListeners();
   }
 
-  /// Partitions dont les métadonnées contiennent [query], triées par titre.
+  /// Scores whose metadata contains [query], sorted by title.
   List<Score> search(String query) {
     final q = query.trim().toLowerCase();
     List<Score> results;

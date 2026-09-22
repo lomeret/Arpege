@@ -8,23 +8,23 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Nécessaire pour créer la release et pousser son tag.
+# Required to create the release and push its tag.
 permissions:
   contents: write
 
-# Un seul run par branche/PR : les pushs successifs annulent le précédent.
+# One run per branch/PR: successive pushes cancel the previous run.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  # Doit satisfaire pubspec.lock (sdks: flutter >=3.41.0 / dart >=3.10.0),
-  # sinon `flutter pub get` échoue sur pdfrx. Aligné sur le SDK local.
+  # Must satisfy pubspec.lock (sdks: flutter >=3.41.0 / dart >=3.10.0),
+  # otherwise `flutter pub get` fails on pdfrx. Aligned with the local SDK.
   FLUTTER_VERSION: "3.44.7"
 
 jobs:
   # --------------------------------------------------------------------------
-  # Calcule le tag / nom / type de la release à partir de l'évènement.
+  # Computes the release tag / name / type from the triggering event.
   # --------------------------------------------------------------------------
   meta:
     runs-on: ubuntu-latest
@@ -36,14 +36,14 @@ jobs:
       prerelease: ${{ steps.m.outputs.prerelease }}
       publish: ${{ steps.m.outputs.publish }}
     steps:
-      # fetch-depth: 0 = historique complet, nécessaire à `git rev-list --count`
-      # ci-dessous (un clone superficiel donnerait toujours 1).
+      # fetch-depth: 0 = full history, needed by `git rev-list --count`
+      # below (a shallow clone would always report 1).
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Déterminer version, build number et tag
+      - name: Determine version, build number and tag
         id: m
         env:
           EVENT: ${{ github.event_name }}
@@ -52,25 +52,25 @@ jobs:
           PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           set -euo pipefail
-          # Version applicative : pubspec.yaml, sans le « +build » (bump manuel,
-          # décision humaine).
+          # App version: from pubspec.yaml, without the "+build" (manual
+          # bump, a human decision).
           VERSION=$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' pubspec.yaml | head -n1)
           VERSION=${VERSION:-0.0.0}
 
-          # Build number : nombre de commits atteignant ce ref. Déterministe et
-          # monotone (contrairement à github.run_number, qui bouge aussi sur un
-          # simple re-run ou un dispatch manuel sans nouveau commit). Sert à la
-          # fois au tag de release et au numéro embarqué dans les binaires
-          # (APK versionCode, AppVersion Windows, révision Debian).
+          # Build number: number of commits reaching this ref. Deterministic
+          # and monotonic (unlike github.run_number, which also moves on a
+          # plain re-run or a manual dispatch with no new commit). Used both
+          # for the release tag and the number embedded in the binaries
+          # (APK versionCode, Windows AppVersion, Debian revision).
           BUILD=$(git rev-list --count HEAD)
 
           case "$EVENT" in
             push)
               if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-                # Release officielle : le tag existe déjà (v1.2.3).
+                # Official release: the tag already exists (v1.2.3).
                 TAG="$REF_NAME"; TITLE="Arpège $REF_NAME"; PRE=false
               else
-                # Chaque commit sur main : build daté, marqué pre-release.
+                # Every commit on main: a dated build, marked pre-release.
                 TAG="v${VERSION}-build.${BUILD}"; TITLE="Arpège ${VERSION} (build ${BUILD})"; PRE=true
               fi
               PUBLISH=true
@@ -79,12 +79,12 @@ jobs:
               TAG="pr-${PR_NUMBER}-build.${BUILD}"
               TITLE="Arpège — PR #${PR_NUMBER} (build ${BUILD})"
               PRE=true
-              # Une PR issue d'un fork n'a qu'un token en lecture seule :
-              # on compile quand même, mais on ne peut pas publier de release.
+              # A PR from a fork only has a read-only token: still build it,
+              # but a release cannot be published.
               if [ "$PR_REPO" = "$GITHUB_REPOSITORY" ]; then PUBLISH=true; else PUBLISH=false; fi
               ;;
             *)
-              TAG="v${VERSION}-manual.${BUILD}"; TITLE="Arpège ${VERSION} (manuel ${BUILD})"
+              TAG="v${VERSION}-manual.${BUILD}"; TITLE="Arpège ${VERSION} (manual ${BUILD})"
               PRE=true; PUBLISH=true
               ;;
           esac
@@ -100,7 +100,7 @@ jobs:
           echo "→ tag=$TAG build=$BUILD prerelease=$PRE publish=$PUBLISH"
 
   # --------------------------------------------------------------------------
-  # Linux : .deb (installer/build_deb.py) + Android : .apk
+  # Linux: .deb (installer/build_deb.py) + Android: .apk
   # --------------------------------------------------------------------------
   linux-android:
     needs: meta
@@ -113,7 +113,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Toolchain desktop Linux
+      - name: Linux desktop toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev dpkg
@@ -126,29 +126,29 @@ jobs:
 
       - run: flutter pub get
 
-      # Bloquant : logique pure (historique, sérialisation JSON, recherche…),
-      # exécutée une seule fois ici plutôt que dans chaque job de build.
-      - name: Tests unitaires
+      # Blocking: pure logic (history, JSON serialization, search…), run
+      # once here rather than in every build job.
+      - name: Unit tests
         run: flutter test
 
-      # Informatif : ne doit pas bloquer la publication d'un build.
+      # Informational: must not block publishing a build.
       - name: Analyze
         continue-on-error: true
         run: flutter analyze
 
-      # build_deb.py fait lui-même `flutter build linux --release`,
-      # puis assemble l'arbo Debian et appelle dpkg-deb → dist/*.deb
-      - name: Construire le paquet .deb
+      # build_deb.py itself runs `flutter build linux --release`,
+      # then assembles the Debian tree and calls dpkg-deb → dist/*.deb
+      - name: Build the .deb package
         env:
           ARPEGE_BUILD_NUMBER: ${{ needs.meta.outputs.build }}
         run: python3 installer/build_deb.py
 
-      # --build-number : versionCode Android, doit être un entier croissant
-      # (exigé par le Play Store) — le compte de commits s'y prête bien.
-      - name: Construire l'APK Android
+      # --build-number: Android versionCode, must be a strictly increasing
+      # integer (required by the Play Store) — commit count fits well.
+      - name: Build the Android APK
         run: flutter build apk --release --build-number=${{ needs.meta.outputs.build }}
 
-      - name: Renommer l'APK
+      - name: Rename the APK
         run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk \
@@ -163,7 +163,7 @@ jobs:
           if-no-files-found: error
 
   # --------------------------------------------------------------------------
-  # Windows : installeur .exe (Inno Setup via installer/build_installer.py)
+  # Windows: .exe installer (Inno Setup via installer/build_installer.py)
   # --------------------------------------------------------------------------
   windows:
     needs: meta
@@ -171,7 +171,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Activer le mode développeur (symlinks pdfrx)
+      - name: Enable developer mode (pdfrx symlinks)
         shell: cmd
         run: reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
 
@@ -183,7 +183,7 @@ jobs:
 
       - run: flutter pub get
 
-      - name: Vérifier / installer Inno Setup
+      - name: Check / install Inno Setup
         shell: pwsh
         run: |
           if (-not (Get-Command ISCC -ErrorAction SilentlyContinue) -and
@@ -191,13 +191,14 @@ jobs:
             choco install innosetup -y --no-progress
           }
 
-      # build_installer.py fait `flutter build windows --release`
-      # puis compile installer/arpege.iss → dist/Arpege-Setup-<version>.exe
-      - name: Construire l'installeur Windows
+      # build_installer.py runs `flutter build windows --release`
+      # then compiles installer/arpege.iss → dist/Arpege-Setup-<version>.exe
+      - name: Build the Windows installer
         shell: pwsh
         env:
-          # La console du runner est en cp1252 : sans ça, un simple print
-          # accentué/emoji fait planter le script après un build réussi.
+          # The runner console is cp1252: without this, a plain print with
+          # an accented character or emoji crashes the script after a
+          # successful build.
           PYTHONUTF8: "1"
           ARPEGE_BUILD_NUMBER: ${{ needs.meta.outputs.build }}
         run: python installer/build_installer.py
@@ -209,7 +210,7 @@ jobs:
           if-no-files-found: error
 
   # --------------------------------------------------------------------------
-  # Publication de la release avec les 3 binaires
+  # Publishes the release with all 3 binaries
   # --------------------------------------------------------------------------
   release:
     needs: [meta, linux-android, windows]
@@ -222,7 +223,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Regrouper les binaires
+      - name: Gather the binaries
         run: |
           set -euo pipefail
           mkdir -p release
@@ -230,30 +231,30 @@ jobs:
             -exec cp {} release/ \;
           ls -lh release
 
-      - name: Publier la release
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.meta.outputs.tag }}
           TITLE: ${{ needs.meta.outputs.title }}
           PRE: ${{ needs.meta.outputs.prerelease }}
-          # Sur une PR, GITHUB_SHA est le merge commit : on tague le HEAD de la PR.
+          # On a PR, GITHUB_SHA is the merge commit: tag the PR's HEAD instead.
           TARGET: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          # Un re-run réutilise le même tag : on repart d'une release propre.
-          # (le tag lui-même est conservé — on ne supprime jamais un tag poussé à la main)
+          # A re-run reuses the same tag: start from a clean release.
+          # (the tag itself is kept — a manually pushed tag is never deleted)
           gh release delete "$TAG" --yes 2>/dev/null || true
 
           NOTES=$(printf '%s\n' \
-            "Build automatique de \`${TARGET:0:7}\` (${GITHUB_REF_NAME})." \
+            "Automatic build of \`${TARGET:0:7}\` (${GITHUB_REF_NAME})." \
             "" \
-            "| Plateforme | Fichier | Installation |" \
+            "| Platform | File | Install |" \
             "| --- | --- | --- |" \
-            "| Android | \`.apk\` | Autoriser les sources inconnues, puis ouvrir le fichier |" \
-            "| Windows | \`Arpege-Setup-*.exe\` | Double-clic, suivre l'assistant |" \
+            "| Android | \`.apk\` | Allow unknown sources, then open the file |" \
+            "| Windows | \`Arpege-Setup-*.exe\` | Double-click, follow the wizard |" \
             "| Debian/Ubuntu | \`.deb\` | \`sudo apt install ./arpege_*_amd64.deb\` |" \
             "" \
-            "> L'APK est signé avec la clé de debug Flutter (pas de keystore de release configuré).")
+            "> The APK is signed with the Flutter debug key (no release keystore configured).")
 
           PRE_FLAG=""
           if [ "$PRE" = "true" ]; then PRE_FLAG="--prerelease"; fi
@@ -265,17 +266,17 @@ jobs:
             $PRE_FLAG \
             release/*
 
-      - name: Résumé
+      - name: Summary
         env:
           TAG: ${{ needs.meta.outputs.tag }}
         run: |
-          echo "Release publiée : $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release published: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
 
-  # Message clair quand une PR de fork ne peut pas publier (token read-only).
+  # Clear message when a fork PR cannot publish (read-only token).
   fork-notice:
     needs: [meta, linux-android, windows]
     if: needs.meta.outputs.publish == 'false'
     runs-on: ubuntu-latest
     steps:
       - run: |
-          echo "PR issue d'un fork : binaires disponibles dans les artefacts du run, pas de release (token en lecture seule)." >> "$GITHUB_STEP_SUMMARY"
+          echo "PR from a fork: binaries are available in the run's artifacts, no release published (read-only token)." >> "$GITHUB_STEP_SUMMARY"

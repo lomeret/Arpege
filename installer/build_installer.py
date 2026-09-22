@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Construit Arpège (Windows release) puis fabrique l'installeur avec Inno Setup.
+"""Builds Arpège (Windows release) then packages the installer with Inno Setup.
 
-À lancer depuis Windows (PowerShell ou cmd), à la racine du projet :
+Run from Windows (PowerShell or cmd), from the project root:
 
     python installer\\build_installer.py
 
-Prérequis : Flutter et Inno Setup 6 installés (https://jrsoftware.org/isdl.php).
-Le setup.exe final est déposé dans le dossier dist\\.
+Requirements: Flutter and Inno Setup 6 installed (https://jrsoftware.org/isdl.php).
+The final setup.exe is dropped into the dist\\ folder.
 """
 from __future__ import annotations
 
@@ -22,20 +22,20 @@ ISS = ROOT / "installer" / "arpege.iss"
 
 
 def read_version() -> str:
-    """Lit la version depuis pubspec.yaml (sans le numéro de build « +N »)."""
+    """Reads the version from pubspec.yaml (without the "+N" build number)."""
     text = (ROOT / "pubspec.yaml").read_text(encoding="utf-8")
     m = re.search(r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+)", text, re.MULTILINE)
     return m.group(1) if m else "1.0.0"
 
 
 def read_build_number() -> str | None:
-    """Numéro de build (CI : nombre de commits sur la branche, cf. release.yml).
-    Absent en local -> pas de 4ᵉ segment de version, comportement inchangé."""
+    """Build number (CI: number of commits on the branch, see release.yml).
+    Absent locally -> no 4th version segment, unchanged behavior."""
     return os.environ.get("ARPEGE_BUILD_NUMBER") or None
 
 
 def find_iscc() -> str | None:
-    """Localise le compilateur Inno Setup (ISCC.exe)."""
+    """Locates the Inno Setup compiler (ISCC.exe)."""
     found = shutil.which("ISCC") or shutil.which("ISCC.exe")
     if found:
         return found
@@ -58,26 +58,26 @@ def run(cmd, **kwargs) -> None:
 def main() -> int:
     build = read_build_number()
 
-    # 1) Build Windows release (flutter est un .bat -> shell=True sous Windows).
+    # 1) Build the Windows release (flutter is a .bat -> shell=True on Windows).
     build_flag = f" --build-number={build}" if build else ""
     run(f"flutter build windows --release{build_flag}", cwd=ROOT, shell=True)
 
-    # 2) Packaging Inno Setup.
+    # 2) Inno Setup packaging.
     iscc = find_iscc()
     if not iscc:
         print(
-            "\nERREUR : ISCC.exe (Inno Setup) introuvable.\n"
-            "Installe Inno Setup 6 : https://jrsoftware.org/isdl.php",
+            "\nERROR: ISCC.exe (Inno Setup) not found.\n"
+            "Install Inno Setup 6: https://jrsoftware.org/isdl.php",
             file=sys.stderr,
         )
         return 1
-    # 4 segments (x.y.z.build) quand un build number CI est fourni, sinon x.y.z.
+    # 4 segments (x.y.z.build) when a CI build number is provided, else x.y.z.
     version = read_version()
     full_version = f"{version}.{build}" if build else version
     run([iscc, f"/DMyAppVersion={full_version}", str(ISS)])
 
-    # ASCII only : la console Windows (cp1252) ne sait pas encoder les emoji.
-    print(f"\nOK - Installeur genere dans : {ROOT / 'dist'}")
+    # ASCII only: the Windows console (cp1252) can't encode emoji.
+    print(f"\nOK - Installer generated in: {ROOT / 'dist'}")
     return 0
 
 

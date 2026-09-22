@@ -1,140 +1,142 @@
-# Arpège — Éditeur de partitions PDF
+# Arpège — PDF Sheet Music Editor
 
-Arpège est une application multiplateforme (Windows, Android, Linux) pour musiciens :
-elle permet d'ouvrir, d'annoter et d'organiser des partitions PDF. Réécrite en
-**Flutter/Dart** à partir de l'application Python/Qt d'origine, elle partage une base de
-code unique pour les trois cibles.
+Arpège is a cross-platform app (Windows, Android, Linux) for musicians:
+it lets you open, annotate, and organize PDF sheet music. Rewritten in
+**Flutter/Dart** from the original Python/Qt app, it shares a single
+codebase across all three targets.
 
-## Fonctionnalités
+## Features
 
-- **Lecture PDF** : rendu haute qualité (pdfium), zoom (molette/pincement), déplacement,
-  ajustement à la fenêtre.
-- **Annotations** : crayon libre (couleur + 3 épaisseurs), dièses ♯, bémols ♭, indications
-  textuelles. Gomme pour supprimer un élément.
-- **Annuler / Rétablir** sur les modifications d'annotations.
-- **Navigation** : pages précédente/suivante, première/dernière, appui sur la moitié
-  gauche/droite pour tourner la page.
-- **Vue double page** : moitié basse de la page courante au-dessus, moitié haute de la
-  suivante en dessous, pour anticiper les tournes.
-- **Gestion des pages** : réordonner, masquer, dupliquer les pages dans une séquence
-  personnalisée qui n'altère jamais le PDF d'origine.
-- **Signets** par partition.
-- **Bibliothèque** de partitions avec métadonnées (titre, compositeur, arrangeur, tonalité,
-  tempo, genre, notes) et recherche.
-- **Setlists** : listes ordonnées de morceaux, navigation morceau précédent/suivant.
-- **Fichiers récents**.
-- **Export PDF annoté** : fusionne les annotations en vectoriel dans une copie du PDF.
+- **PDF viewing**: high-quality rendering (pdfium), zoom (scroll wheel/pinch), pan,
+  fit-to-window.
+- **Annotations**: free-hand pencil (color + 3 thicknesses), sharps ♯, flats ♭, text
+  indications. Eraser to remove an element.
+- **Undo / Redo** on annotation changes.
+- **Navigation**: previous/next page, first/last, tap the left/right half of the
+  screen to turn the page.
+- **Two-page spread view**: bottom half of the current page above, top half of the
+  next one below, to anticipate page turns.
+- **Page management**: reorder, hide, duplicate pages in a custom sequence that
+  never alters the original PDF.
+- **Bookmarks** per score.
+- **Library** of scores with metadata (title, composer, arranger, key, tempo,
+  genre, notes) and search.
+- **Setlists**: ordered lists of songs, previous/next song navigation.
+- **Recent files**.
+- **Annotated PDF export**: merges the annotations as vector graphics into a copy
+  of the PDF.
 
-Les données restent **compatibles avec l'ancienne app Python** : mêmes fichiers JSON aux
-mêmes emplacements.
+Data stays **compatible with the old Python app**: same JSON files at the same
+locations.
 
-- Bibliothèque et setlists : `~/Documents/Arpège/config/library.json`
-- Fichiers récents : `~/Documents/Arpège/config/recent_files.json`
-- Annotations (une par PDF) : `~/Documents/Arpège/annotations/<nom>_annotations.json`
+- Library and setlists: `~/Documents/Arpège/config/library.json`
+- Recent files: `~/Documents/Arpège/config/recent_files.json`
+- Annotations (one per PDF): `~/Documents/Arpège/annotations/<name>_annotations.json`
 
-(Sur Android, ces fichiers se trouvent dans le dossier de documents privé de l'application.)
+(On Android, these files live in the app's private documents folder.)
 
-## Raccourcis clavier (desktop)
+## Keyboard shortcuts (desktop)
 
-| Raccourci | Action |
+| Shortcut | Action |
 | --- | --- |
-| `Ctrl+O` | Ouvrir un PDF |
-| `Ctrl+S` | Sauvegarder les annotations |
-| `Ctrl+E` | Exporter le PDF annoté |
-| `Ctrl+Z` / `Ctrl+Y` | Annuler / Rétablir |
-| `←` / `→`, `Page↑` / `Page↓` | Page précédente / suivante |
-| `Début` / `Fin` | Première / dernière page |
-| `Ctrl+ +` / `Ctrl+ -` / `Ctrl+0` | Zoom avant / arrière / ajuster |
-| `Ctrl+D` | Vue double page |
-| `Ctrl+B` | Ajouter un signet |
-| `Alt+←` / `Alt+→` | Morceau précédent / suivant (setlist) |
-| `Échap` | Désélectionner l'outil |
+| `Ctrl+O` | Open a PDF |
+| `Ctrl+S` | Save annotations |
+| `Ctrl+E` | Export the annotated PDF |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
+| `←` / `→`, `Page Up` / `Page Down` | Previous / next page |
+| `Home` / `End` | First / last page |
+| `Ctrl+ +` / `Ctrl+ -` / `Ctrl+0` | Zoom in / out / fit |
+| `Ctrl+D` | Two-page spread view |
+| `Ctrl+B` | Add a bookmark |
+| `Alt+←` / `Alt+→` | Previous / next song (setlist) |
+| `Esc` | Deselect the current tool |
 
-## Développement
+## Development
 
-Prérequis : [Flutter](https://docs.flutter.dev/get-started/install) (stable, ≥ 3.24).
+Requirements: [Flutter](https://docs.flutter.dev/get-started/install) (stable, ≥ 3.24).
 
 ```bash
 flutter pub get
-flutter run          # lance sur la cible connectée (desktop ou appareil Android)
-flutter analyze      # analyse statique
+flutter run          # launches on the connected target (desktop or Android device)
+flutter analyze      # static analysis
 ```
 
-## Compilation des exécutables
+## Building the executables
 
-> Les builds desktop de Flutter sont **host-only** : un `.exe` Windows se compile sur
-> Windows, un binaire Linux sur Linux. Android se compile depuis n'importe quel hôte.
-> Le workflow CI [`.github/workflows/build.yml`](.github/workflows/build.yml) produit
-> automatiquement les trois artefacts (Linux, Android, Windows).
+> Flutter desktop builds are **host-only**: a Windows `.exe` is built on
+> Windows, a Linux binary on Linux. Android can be built from any host.
+> The CI workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) automatically
+> produces all three artifacts (Linux, Android, Windows).
 
-> **Version minimale : Flutter ≥ 3.41 / Dart ≥ 3.10.** Requis par `pdfrx 2.4.7`.
-> Une version antérieure fait échouer la résolution (`pdfrx requires SDK ^3.10.0`)
-> ou la compilation (`_PdfTextRenderBox is missing implementations`). Sur une
-> version trop ancienne : `flutter upgrade`.
+> **Minimum version: Flutter ≥ 3.41 / Dart ≥ 3.10.** Required by `pdfrx 2.4.7`.
+> An older version fails dependency resolution (`pdfrx requires SDK ^3.10.0`)
+> or compilation (`_PdfTextRenderBox is missing implementations`). On an
+> older version: `flutter upgrade`.
 
-Les scripts ci-dessous ne sont que des enveloppes ; on peut appeler `flutter`
-directement. Sous Windows, tout se pilote depuis **PowerShell** (`flutter build …`),
-y compris l'APK Android.
+The scripts below are just wrappers; you can call `flutter` directly. On
+Windows, everything is driven from **PowerShell** (`flutter build …`),
+including the Android APK.
 
 ### Linux
 
 ```bash
 sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
 flutter config --enable-linux-desktop
-./build-linux.sh                 # ou : flutter build linux --release
-# → build/linux/x64/release/bundle/  (dossier, pas un exe seul)
+./build-linux.sh                 # or: flutter build linux --release
+# → build/linux/x64/release/bundle/  (a folder, not a single exe)
 ```
 
-> Pour une **installation propre** (paquet `.deb` avec menu, icône et dépendances
-> gérées par `apt`) : `python3 installer/build_deb.py`, puis
+> For a **clean install** (a `.deb` package with a menu entry, icon, and
+> dependencies handled by `apt`): `python3 installer/build_deb.py`, then
 > `sudo apt install ./dist/arpege_*.deb`.
-> Détails et désinstallation : [installer/README.md](installer/README.md).
+> Details and uninstall instructions: [installer/README.md](installer/README.md).
 
 ### Android
 
 ```bash
-./build-android.sh              # enveloppe de la commande ci-dessous
-flutter build apk --release     # équivalent direct
+./build-android.sh              # wrapper around the command below
+flutter build apk --release     # direct equivalent
 # → build/app/outputs/flutter-apk/app-release.apk
 ```
 
-### Windows (sur une machine Windows)
+### Windows (on a Windows machine)
 
-Prérequis : Visual Studio 2022 (« Desktop development with C++ ») et le **Mode
-développeur** Windows activé (pdfrx utilise des liens symboliques à la compilation).
+Requirements: Visual Studio 2022 ("Desktop development with C++") and Windows
+**Developer Mode** enabled (pdfrx uses symbolic links at build time).
 
 ```powershell
-./build-windows.ps1             # enveloppe de la commande ci-dessous
-flutter build windows           # équivalent direct
+./build-windows.ps1             # wrapper around the command below
+flutter build windows           # direct equivalent
 # → build\windows\x64\runner\Release\arpege.exe
 ```
 
-> ⚠️ L'app compilée n'est **pas** un `.exe` autonome : distribuer tout le dossier
-> `Release\` (exe + `flutter_windows.dll` + `pdfium.dll` + `data\`), ou générer un
-> installeur unique avec `python installer\build_installer.py`.
-> Détails : [installer/README.md](installer/README.md).
+> ⚠️ The compiled app is **not** a standalone `.exe`: distribute the whole
+> `Release\` folder (exe + `flutter_windows.dll` + `pdfium.dll` + `data\`), or
+> generate a single installer with `python installer\build_installer.py`.
+> Details: [installer/README.md](installer/README.md).
 
-## Installeurs (distribution aux utilisateurs)
+## Installers (distributing to users)
 
-Pour distribuer l'app packagée (installeur Windows `.exe` ou paquet Debian `.deb`),
-avec build, installation et désinstallation : voir **[installer/README.md](installer/README.md)**.
+To distribute the packaged app (Windows `.exe` installer or Debian `.deb`
+package), with build, install and uninstall instructions: see
+**[installer/README.md](installer/README.md)**.
 
 ## Architecture
 
 ```
 lib/
-  main.dart              point d'entrée, providers, layout responsive, raccourcis
-  theme.dart             thème sombre (Catppuccin Mocha)
+  main.dart              entry point, providers, responsive layout, shortcuts
+  theme.dart              dark theme (Catppuccin Mocha)
   models/                Score, Setlist, Notation/DrawingPath, Bookmark, AnnotationDocument
-  services/              chemins, bibliothèque, fichiers récents, annotations, export PDF
+  services/              paths, library, recent files, annotations, PDF export
   state/                 LibraryController, EditorController, HistoryManager
-  pdf/pdf_renderer.dart  rendu des pages via pdfrx
-  widgets/               vue partition (zoom/pan/dessin), barres, panneaux, dialogues
+  pdf/pdf_renderer.dart  page rendering via pdfrx
+  widgets/               score view (zoom/pan/drawing), toolbars, panels, dialogs
 ```
 
-Dépendances principales : `pdfrx` (rendu), `syncfusion_flutter_pdf` (export),
-`provider` (état), `path_provider`, `file_picker`.
+Main dependencies: `pdfrx` (rendering), `syncfusion_flutter_pdf` (export),
+`provider` (state), `path_provider`, `file_picker`.
 
-## Licence
+## License
 
 MIT.

@@ -3,16 +3,16 @@ import 'package:flutter/material.dart';
 import '../models/score.dart';
 
 const _labels = {
-  'title': 'Titre',
-  'composer': 'Compositeur',
-  'arranger': 'Arrangeur',
-  'key': 'Tonalité',
+  'title': 'Title',
+  'composer': 'Composer',
+  'arranger': 'Arranger',
+  'key': 'Key',
   'tempo': 'Tempo',
   'genre': 'Genre',
 };
 
-/// Éditeur des métadonnées d'une partition (port de `MetadataDialog`).
-/// Renvoie les nouvelles valeurs, ou `null` si annulé.
+/// Editor for a score's metadata (port of `MetadataDialog`).
+/// Returns the new values, or `null` if cancelled.
 Future<Map<String, String>?> showMetadataDialog(
     BuildContext context, Score score) {
   final controllers = <String, TextEditingController>{
@@ -24,7 +24,7 @@ Future<Map<String, String>?> showMetadataDialog(
   return showDialog<Map<String, String>>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Métadonnées de la partition'),
+      title: const Text('Score metadata'),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -59,7 +59,7 @@ Future<Map<String, String>?> showMetadataDialog(
       actions: [
         TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Annuler')),
+            child: const Text('Cancel')),
         ElevatedButton(
           onPressed: () {
             final values = <String, String>{
@@ -68,7 +68,7 @@ Future<Map<String, String>?> showMetadataDialog(
             };
             Navigator.of(ctx).pop(values);
           },
-          child: const Text('Enregistrer'),
+          child: const Text('Save'),
         ),
       ],
     ),

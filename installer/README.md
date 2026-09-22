@@ -1,108 +1,109 @@
-# Empaquetage & installation d'Arpège
+# Packaging & installing Arpège
 
-Ce dossier contient les générateurs d'installeurs pour distribuer Arpège aux
-utilisateurs finaux (sans qu'ils aient à installer Flutter).
+This folder contains the installer builders used to ship Arpège to end users
+(without requiring them to install Flutter).
 
-| Cible | Générateur | Produit | Sortie |
+| Target | Builder | Output | Location |
 | --- | --- | --- | --- |
 | Windows | `build_installer.py` (Inno Setup) | `Arpege-Setup-<version>.exe` | `dist/` |
 | Debian/Ubuntu | `build_deb.py` (dpkg-deb) | `arpege_<version>_amd64.deb` | `dist/` |
 
-> Rappel : un build desktop Flutter n'est **pas** un exécutable autonome, mais un
-> dossier (exe + bibliothèques + `data/`). Ces installeurs empaquettent tout le
-> dossier et ajoutent l'intégration système (menu, icône, désinstallation).
-> Chaque installeur se génère **sur la plateforme cible** (Windows sur Windows,
-> `.deb` sur Linux/WSL).
+> Reminder: a Flutter desktop build is **not** a standalone executable, but a
+> folder (exe + libraries + `data/`). These installers package the whole
+> folder and add system integration (menu, icon, uninstall).
+> Each installer must be built **on the target platform** (Windows on
+> Windows, `.deb` on Linux/WSL).
 
 ---
 
 ## Windows (`.exe`)
 
-### Prérequis
-- [Flutter](https://docs.flutter.dev/get-started/install) (voir README principal)
-- Visual Studio 2022 (« Desktop development with C++ ») + **Mode développeur** Windows
+### Requirements
+- [Flutter](https://docs.flutter.dev/get-started/install) (see the main README)
+- Visual Studio 2022 ("Desktop development with C++") + Windows **Developer Mode**
 - [Inno Setup 6](https://jrsoftware.org/isdl.php)
 
-### Générer l'installeur
-Depuis **PowerShell**, à la racine du projet :
+### Building the installer
+From **PowerShell**, at the project root:
 
 ```powershell
 python installer\build_installer.py
 # 1) flutter build windows --release
-# 2) Inno Setup empaquette build\windows\x64\runner\Release\
+# 2) Inno Setup packages build\windows\x64\runner\Release\
 # → dist\Arpege-Setup-1.0.0.exe
 ```
 
-### Installer / désinstaller
-- **Installer** : double-clic sur `dist\Arpege-Setup-1.0.0.exe`, suivre l'assistant.
-  (Installe dans `Program Files\Arpege`, crée le raccourci menu Démarrer.)
-- **Désinstaller** : Paramètres Windows → Applications → *Arpège* → Désinstaller.
+### Install / uninstall
+- **Install**: double-click `dist\Arpege-Setup-1.0.0.exe`, follow the wizard.
+  (Installs into `Program Files\Arpege`, creates a Start Menu shortcut.)
+- **Uninstall**: Windows Settings → Apps → *Arpège* → Uninstall.
 
 ---
 
 ## Debian / Ubuntu (`.deb`)
 
-### Prérequis
-- Flutter avec le desktop Linux activé :
+### Requirements
+- Flutter with Linux desktop enabled:
   ```bash
   flutter config --enable-linux-desktop
   ```
-- Dépendances de build :
+- Build dependencies:
   ```bash
   sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
   ```
-- `dpkg-deb` (paquet `dpkg`, présent par défaut sur Debian/Ubuntu)
+- `dpkg-deb` (the `dpkg` package, present by default on Debian/Ubuntu)
 
-### Générer le paquet
-À la racine du projet :
+### Building the package
+At the project root:
 
 ```bash
 python3 installer/build_deb.py
 # 1) flutter build linux --release
-# 2) assemble l'arbo Debian + dpkg-deb --build
+# 2) assembles the Debian tree + dpkg-deb --build
 # → dist/arpege_1.0.0_amd64.deb
 ```
 
-### Installer
+### Installing
 
-**Méthode recommandée — `apt`** (installe aussi les dépendances système) :
+**Recommended — `apt`** (also installs system dependencies):
 
 ```bash
 sudo apt install ./dist/arpege_1.0.0_amd64.deb
 ```
 
-> ⚠️ Le `./` (ou un chemin absolu) est **obligatoire** : sans lui, `apt` cherche un
-> paquet nommé « arpege » dans les dépôts et échoue.
+> ⚠️ The `./` (or an absolute path) is **required**: without it, `apt` looks
+> for a package named "arpege" in the repositories and fails.
 
-**Alternative — `dpkg`** (puis réparer les dépendances si besoin) :
+**Alternative — `dpkg`** (then fix dependencies if needed):
 
 ```bash
 sudo dpkg -i ./dist/arpege_1.0.0_amd64.deb
-sudo apt -f install        # tire les dépendances manquantes signalées par dpkg
+sudo apt -f install        # pulls in missing dependencies flagged by dpkg
 ```
 
-### Lancer
-- Depuis le menu des applications : **Arpège**
-- Ou en ligne de commande : `arpege`
+### Launching
+- From the application menu: **Arpège**
+- Or from the command line: `arpege`
 
-### Désinstaller
+### Uninstalling
 ```bash
-sudo apt remove arpege        # (ou : sudo dpkg -r arpege)
+sudo apt remove arpege        # (or: sudo dpkg -r arpege)
 ```
 
-### Où est installée l'app ?
-| Chemin | Contenu |
+### Where is the app installed?
+| Path | Contents |
 | --- | --- |
-| `/opt/arpege/` | le bundle complet (exe + `lib/*.so` + `data/`) |
-| `/usr/bin/arpege` | symlink de lancement (dans le `PATH`) |
-| `/usr/share/applications/arpege.desktop` | entrée menu |
-| `/usr/share/pixmaps/arpege.png` | icône |
+| `/opt/arpege/` | the full bundle (exe + `lib/*.so` + `data/`) |
+| `/usr/bin/arpege` | launcher symlink (on the `PATH`) |
+| `/usr/share/applications/arpege.desktop` | menu entry |
+| `/usr/share/pixmaps/arpege.png` | icon |
 
-### Note WSL
-Le script construit l'arbo du paquet dans `/tmp` (et non dans le repo) puis
-normalise les permissions. C'est nécessaire car sous WSL le repo est sur `/mnt/c`
-(drvfs) où tout est en 777 et `chmod` est ignoré — `dpkg-deb` refuse alors le
-dossier de contrôle `DEBIAN`. Le `.deb` final est écrit dans `dist/` sans souci.
+### WSL note
+The script stages the package tree in `/tmp` (not in the repo) then
+normalizes permissions. This is required because under WSL the repo sits on
+`/mnt/c` (drvfs) where everything is 777 and `chmod` is ignored — `dpkg-deb`
+then refuses the `DEBIAN` control folder. The final `.deb` is written to
+`dist/` without issue.
 
-Un `.deb` cible **Debian/Ubuntu** (`apt`/`dpkg`). Pour Fedora/Arch, il faudrait un
-`.rpm`/`PKGBUILD` ; pour un exécutable unique multi-distros, un **AppImage**.
+A `.deb` targets **Debian/Ubuntu** (`apt`/`dpkg`). For Fedora/Arch, you'd need
+an `.rpm`/`PKGBUILD`; for a single multi-distro executable, an **AppImage**.

@@ -5,8 +5,8 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import '../models/annotation_document.dart';
 
-/// Fusionne les annotations dans une copie vectorielle du PDF source.
-/// Port de `features/pdf_export.py` (dièses/bémols/indications/tracés).
+/// Merges annotations into a vector copy of the source PDF.
+/// Port of `features/pdf_export.py` (sharps/flats/indications/strokes).
 class PdfExporter {
   static const String _defaultColor = '#e74c3c';
   static const String _indicationColor = '#27ae60';
@@ -40,10 +40,10 @@ class PdfExporter {
       PdfGraphics g, double x, double y, double size, PdfColor color) {
     final half = size / 2;
     final pen = PdfPen(color, width: 1.4);
-    // Hampe verticale.
+    // Vertical stem.
     g.drawLine(pen, Offset(x - half * 0.4, y - half),
         Offset(x - half * 0.4, y + half * 0.7));
-    // Panse arrondie pleine.
+    // Filled rounded bowl.
     g.drawEllipse(
       Rect.fromLTWH(x - half * 0.4, y, half * 1.0, half * 0.9),
       pen: pen,
@@ -51,7 +51,7 @@ class PdfExporter {
     );
   }
 
-  /// Écrit le PDF annoté dans [destPath].
+  /// Writes the annotated PDF to [destPath].
   static Future<void> export({
     required String sourcePdfPath,
     required String destPath,
@@ -70,7 +70,7 @@ class PdfExporter {
         final pageWidth = size.width;
         final pageHeight = size.height;
 
-        // Notations musicales.
+        // Musical notations.
         for (final n in doc.notationsForPage(i)) {
           final absX = n.relativeX * pageWidth;
           final absY = n.relativeY * pageHeight;
@@ -95,7 +95,7 @@ class PdfExporter {
           }
         }
 
-        // Tracés au crayon.
+        // Pencil strokes.
         for (final path in doc.drawingsForPage(i)) {
           final rgb = _hexToColor(path.color);
           final pen = PdfPen(rgb, width: path.size);

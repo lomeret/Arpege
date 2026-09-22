@@ -5,8 +5,8 @@ import '../state/editor_controller.dart';
 import '../theme.dart';
 import 'dialogs.dart';
 
-/// Rail vertical d'outils : crayon, dièse, bémol, indication, gomme,
-/// couleur, épaisseur, effacer (port de `build_sidebar`).
+/// Vertical tool rail: pencil, sharp, flat, indication, eraser, color,
+/// thickness, clear (port of `build_sidebar`).
 class ToolSidebar extends StatelessWidget {
   const ToolSidebar({super.key});
 
@@ -20,19 +20,19 @@ class ToolSidebar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
       child: Column(
         children: [
-          _tool(editor, Tool.crayon, const Icon(Icons.edit), 'Crayon — dessin libre'),
-          _tool(editor, Tool.sharp, const _Glyph('♯'), 'Ajouter un dièse'),
-          _tool(editor, Tool.flat, const _Glyph('♭'), 'Ajouter un bémol'),
+          _tool(editor, Tool.crayon, const Icon(Icons.edit), 'Pencil — free drawing'),
+          _tool(editor, Tool.sharp, const _Glyph('♯'), 'Add a sharp'),
+          _tool(editor, Tool.flat, const _Glyph('♭'), 'Add a flat'),
           _tool(editor, Tool.indication, const _Glyph('T', italic: true),
-              'Ajouter une indication texte'),
+              'Add a text indication'),
           _tool(editor, Tool.eraser, const Icon(Icons.cleaning_services_outlined),
-              'Gomme — supprimer un élément'),
+              'Eraser — remove an element'),
           const SizedBox(height: 6),
           const Divider(height: 1, color: AppColors.surface0),
           const SizedBox(height: 6),
-          // Couleur du crayon
+          // Pencil color
           Tooltip(
-            message: 'Couleur du crayon',
+            message: 'Pencil color',
             child: InkWell(
               borderRadius: BorderRadius.circular(11),
               onTap: () async {
@@ -55,7 +55,7 @@ class ToolSidebar extends StatelessWidget {
           ],
           const Spacer(),
           Tooltip(
-            message: 'Effacer toutes les annotations de la page',
+            message: 'Clear all annotations on this page',
             child: IconButton(
               icon: const Icon(Icons.delete_outline, color: AppColors.red),
               onPressed: editor.currentPdfPath == null
@@ -102,16 +102,16 @@ class ToolSidebar extends StatelessWidget {
     );
   }
 
-  /// Outils dont la taille se règle au curseur (crayon = épaisseur,
-  /// symboles = échelle). L'unité et la plage dépendent de l'outil actif.
+  /// Tools whose size is adjusted with the slider (pencil = thickness,
+  /// symbols = scale). The unit and range depend on the active tool.
   static bool _sizableTool(Tool? tool) =>
       tool == Tool.crayon ||
       tool == Tool.sharp ||
       tool == Tool.flat ||
       tool == Tool.indication;
 
-  /// Curseur unique, contextuel : pilote l'épaisseur du crayon ou l'échelle
-  /// des symboles selon l'outil actif, chacun conservant sa propre valeur.
+  /// Single contextual slider: drives the pencil thickness or the symbol
+  /// scale depending on the active tool, each keeping its own value.
   Widget _sizeSlider(EditorController editor) {
     final isCrayon = editor.activeTool == Tool.crayon;
     final double min = isCrayon ? 1.0 : 0.4;

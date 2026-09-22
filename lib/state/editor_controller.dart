@@ -18,7 +18,7 @@ import 'library_controller.dart';
 
 enum Tool { crayon, sharp, flat, indication, eraser }
 
-/// Tolérance de clic de la gomme, en coordonnées relatives.
+/// Eraser click tolerance, in relative coordinates.
 const double kEraserTolerance = 0.03;
 
 String _colorToHex(Color c) =>
@@ -30,7 +30,7 @@ Color _hexToColor(String hex) {
   return Color(0xFF000000 | int.parse(h, radix: 16));
 }
 
-/// État d'édition d'une partition + orchestration (port de `ArpegeWindow`).
+/// Editing state for a score + orchestration (port of `ArpegeWindow`).
 class EditorController extends ChangeNotifier {
   EditorController(this.library);
 
@@ -38,13 +38,13 @@ class EditorController extends ChangeNotifier {
   final PdfRenderer renderer = PdfRenderer();
   final HistoryManager history = HistoryManager();
 
-  /// Transform partagé avec la vue pour le zoom/pan (lu par le « zoom chip »).
+  /// Shared with the view for zoom/pan (read by the "zoom chip").
   final TransformationController viewTransform = TransformationController();
 
-  /// Se redessine à chaque point ajouté au tracé en cours (évite un rebuild global).
+  /// Repaints on every point added to the current stroke (avoids a full rebuild).
   final ValueNotifier<int> strokeTick = ValueNotifier<int>(0);
 
-  // Rappels enregistrés par la vue (ont besoin de la taille du viewport).
+  // Callbacks registered by the view (need the viewport size).
   VoidCallback? fitViewCallback;
   void Function(double factor)? zoomByCallback;
 
@@ -60,25 +60,25 @@ class EditorController extends ChangeNotifier {
   Tool? activeTool;
   String _crayonColorHex = _colorToHex(AppColors.defaultCrayon);
 
-  /// Épaisseur du trait de crayon, en points PDF.
+  /// Pencil stroke width, in PDF points.
   double crayonSize = 4;
 
-  /// Échelle appliquée aux prochains dièses/bémols/indications posés.
+  /// Scale applied to the next sharps/flats/indications placed.
   double notationSize = 1.0;
 
   bool spreadView = false;
 
-  // Tracé au crayon en cours (rendu par la vue, validé à la fin).
+  // Pencil stroke in progress (rendered by the view, committed at the end).
   List<StrokePoint>? activeStrokePoints;
   int? activeStrokePage;
 
   String get statusHint => _statusHint;
-  String _statusHint = 'Ouvrez une partition pour commencer  •  Ctrl+O';
+  String _statusHint = 'Open a score to get started  •  Ctrl+O';
 
   Color get crayonColor => _hexToColor(_crayonColorHex);
   String get crayonColorHex => _crayonColorHex;
 
-  // ---- Séquence de pages --------------------------------------------
+  // ---- Page sequence ---------------------------------------------------
 
   List<int> get effectiveSequence {
     if (doc.pageSequence != null) return doc.pageSequence!;
@@ -104,7 +104,7 @@ class EditorController extends ChangeNotifier {
     return '${seqPos + 1} / $total';
   }
 
-  // ---- Ouverture / chargement ---------------------------------------
+  // ---- Opening / loading -------------------------------------------------
 
   Future<void> openPdf(String path) async {
     history.clear();
@@ -127,7 +127,7 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Ouvre une partition de la bibliothèque ; renvoie `false` si le fichier manque.
+  /// Opens a score from the library; returns `false` if the file is missing.
   Future<bool> openScoreId(String scoreId) async {
     final score = library.getScore(scoreId);
     if (score == null) return true;
@@ -136,17 +136,17 @@ class EditorController extends ChangeNotifier {
     return true;
   }
 
-  // ---- Outils --------------------------------------------------------
+  // ---- Tools --------------------------------------------------------
 
   void setTool(Tool? tool) {
     activeTool = tool;
     _statusHint = switch (tool) {
-      null => 'Aucun outil  •  glisser pour déplacer la vue',
-      Tool.crayon => 'Crayon  •  dessinez directement sur la partition',
-      Tool.sharp => 'Dièse  •  touchez à l\'endroit voulu',
-      Tool.flat => 'Bémol  •  touchez à l\'endroit voulu',
-      Tool.indication => 'Indication  •  touchez puis saisissez le texte',
-      Tool.eraser => 'Gomme  •  touchez un élément pour le supprimer',
+      null => 'No tool selected  •  drag to pan the view',
+      Tool.crayon => 'Pencil  •  draw directly on the score',
+      Tool.sharp => 'Sharp  •  tap where you want to place it',
+      Tool.flat => 'Flat  •  tap where you want to place it',
+      Tool.indication => 'Indication  •  tap then type the text',
+      Tool.eraser => 'Eraser  •  tap an element to remove it',
     };
     notifyListeners();
   }
@@ -166,7 +166,7 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- Historique ----------------------------------------------------
+  // ---- History ----------------------------------------------------
 
   void _pushHistory() => history.push(doc.snapshot());
 
@@ -188,7 +188,7 @@ class EditorController extends ChangeNotifier {
     }
   }
 
-  // ---- Annotations : pose --------------------------------------------
+  // ---- Annotations: placement --------------------------------------------
 
   void placeSharp(int page, double relX, double relY) {
     _pushHistory();
@@ -225,7 +225,7 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Tracé au crayon
+  // Pencil stroke
   void beginStroke(int page, double relX, double relY) {
     activeStrokePage = page;
     activeStrokePoints = [StrokePoint(relX, relY)];
@@ -332,7 +332,7 @@ class EditorController extends ChangeNotifier {
   void zoomIn() => zoomByCallback?.call(1.15);
   void zoomOut() => zoomByCallback?.call(1 / 1.15);
 
-  // ---- Gestion des pages ---------------------------------------------
+  // ---- Page management ---------------------------------------------
 
   List<int> get defaultSequence =>
       renderer.isOpen ? List.generate(renderer.pageCount, (i) => i) : [];
@@ -351,7 +351,7 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- Signets -------------------------------------------------------
+  // ---- Bookmarks -------------------------------------------------------
 
   void addBookmark(String label) {
     if (currentPdfPath == null) return;
@@ -388,7 +388,7 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- Sauvegarde / export -------------------------------------------
+  // ---- Save / export -------------------------------------------
 
   Future<String?> saveAnnotations({bool silent = false}) async {
     if (currentPdfPath == null) return null;
@@ -400,7 +400,7 @@ class EditorController extends ChangeNotifier {
     );
     _createdIso ??= DateTime.now().toIso8601String();
     if (!silent) {
-      _statusHint = 'Annotations sauvegardées  •  $path';
+      _statusHint = 'Annotations saved  •  $path';
       notifyListeners();
     }
     return path;
@@ -421,7 +421,7 @@ class EditorController extends ChangeNotifier {
       destPath: destPath,
       doc: doc,
     );
-    _statusHint = 'PDF annoté exporté  •  $destPath';
+    _statusHint = 'Annotated PDF exported  •  $destPath';
     notifyListeners();
   }
 

@@ -4,10 +4,10 @@ import 'dart:io';
 import '../models/annotation_document.dart';
 import 'paths.dart';
 
-/// Lecture/écriture du fichier d'annotations propre à chaque PDF.
-/// Schéma identique à l'ancien `main.py`.
+/// Read/write of the annotations file specific to each PDF.
+/// Same schema as the old `main.py`.
 class AnnotationStore {
-  /// Charge les annotations associées à [pdfPath], ou `null` si aucun fichier.
+  /// Loads the annotations for [pdfPath], or `null` if no file exists.
   static Future<AnnotationDocument?> load(String pdfPath) async {
     final file = await AppPaths.annotationsFileFor(pdfPath);
     if (!await file.exists()) return null;
@@ -15,14 +15,14 @@ class AnnotationStore {
     return AnnotationDocument.fromJson(data);
   }
 
-  /// Charge un fichier d'annotations depuis un chemin arbitraire (import manuel).
+  /// Loads an annotations file from an arbitrary path (manual import).
   static Future<AnnotationDocument> loadFromPath(String jsonPath) async {
     final content = await File(jsonPath).readAsString();
     final data = jsonDecode(content) as Map<String, dynamic>;
     return AnnotationDocument.fromJson(data);
   }
 
-  /// Lit la date de création existante pour la préserver lors des sauvegardes.
+  /// Reads the existing creation date to preserve it across saves.
   static Future<String?> existingCreatedDate(String pdfPath) async {
     final file = await AppPaths.annotationsFileFor(pdfPath);
     if (!await file.exists()) return null;

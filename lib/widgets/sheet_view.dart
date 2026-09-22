@@ -12,7 +12,7 @@ const double _kFitMargin = 40;
 const double _kZoomMin = 0.03;
 const double _kZoomMax = 6.0;
 
-/// Vue de la partition : zoom/pan (InteractiveViewer) + canvas d'annotations.
+/// Score view: zoom/pan (InteractiveViewer) + annotation canvas.
 class SheetView extends StatefulWidget {
   const SheetView({super.key});
 
@@ -30,7 +30,7 @@ class _SheetViewState extends State<SheetView> {
   String _key = '';
   bool _building = false;
 
-  // Slot actif pendant un tracé/effacement.
+  // Active slot while drawing/erasing.
   PageSlot? _activeSlot;
 
   @override
@@ -60,7 +60,7 @@ class _SheetViewState extends State<SheetView> {
     if (key != _key) {
       _rebuildSlots(fit: true);
     } else if (mounted) {
-      setState(() {}); // simple repaint (annotations, outils…)
+      setState(() {}); // simple repaint (annotations, tools…)
     }
   }
 
@@ -91,7 +91,7 @@ class _SheetViewState extends State<SheetView> {
     final pos = c.seqPos.clamp(0, seq.length - 1);
     final current = seq[pos];
 
-    // Spécifications de bandes : vue simple ou double (moitiés).
+    // Band specs: single view or spread (halves).
     final List<(int, double, double)> specs;
     if (c.spreadView && pos + 1 < seq.length) {
       specs = [
@@ -163,7 +163,7 @@ class _SheetViewState extends State<SheetView> {
     c.viewTransform.value = s.multiplied(c.viewTransform.value);
   }
 
-  // ---- Conversion pointeur ------------------------------------------
+  // ---- Pointer conversion ------------------------------------------
 
   PageSlot? _slotAt(Offset canvasPos) {
     for (final slot in _slots) {
@@ -177,7 +177,7 @@ class _SheetViewState extends State<SheetView> {
         p.dy.clamp(slot.rect.top, slot.rect.bottom),
       );
 
-  // ---- Gestes : placement ponctuel ----------------------------------
+  // ---- Gestures: single-point placement ----------------------------
 
   Future<void> _onCanvasTap(TapUpDetails d) async {
     final slot = _slotAt(d.localPosition);
@@ -209,26 +209,26 @@ class _SheetViewState extends State<SheetView> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Indication musicale'),
+        title: const Text('Musical indication'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Texte de l\'indication'),
+          decoration: const InputDecoration(hintText: 'Indication text'),
           onSubmitted: (v) => Navigator.of(ctx).pop(v),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Annuler')),
+              child: const Text('Cancel')),
           ElevatedButton(
               onPressed: () => Navigator.of(ctx).pop(ctrl.text),
-              child: const Text('Ajouter')),
+              child: const Text('Add')),
         ],
       ),
     );
   }
 
-  // ---- Gestes : dessin / effacement au glisser ----------------------
+  // ---- Gestures: drag drawing / erasing ----------------------
 
   void _onPanStart(DragStartDetails d) {
     final slot = _slotAt(d.localPosition);
@@ -259,7 +259,7 @@ class _SheetViewState extends State<SheetView> {
     _activeSlot = null;
   }
 
-  // ---- Tap plein écran : tourner la page ----------------------------
+  // ---- Full-screen tap: turn the page ----------------------------
 
   void _onViewportTap(TapUpDetails d) {
     if (_viewport.isEmpty) return;
@@ -272,7 +272,7 @@ class _SheetViewState extends State<SheetView> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<EditorController>(); // rebuild sur changement d'outil, etc.
+    context.watch<EditorController>(); // rebuild on tool change, etc.
     final tool = c.activeTool;
     final hasContent = _slots.isNotEmpty;
 
@@ -353,7 +353,7 @@ class _Placeholder extends StatelessWidget {
             Image.asset('assets/Logo.png', width: 160, height: 160),
             const SizedBox(height: 24),
             const Text(
-              'Aucune partition ouverte — Ctrl+O pour ouvrir un PDF',
+              'No score open — Ctrl+O to open a PDF',
               style: TextStyle(color: AppColors.subtext, fontSize: 15),
             ),
           ],

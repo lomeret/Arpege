@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Palette sombre Catppuccin Mocha (portée depuis le dict `C` de l'ancien main.py).
+/// Dark Catppuccin Mocha palette (ported from the `C` dict in the old main.py).
 class AppColors {
   static const crust = Color(0xFF11111B);
   static const mantle = Color(0xFF181825);
@@ -16,7 +16,7 @@ class AppColors {
   static const yellow = Color(0xFFF9E2AF);
   static const peach = Color(0xFFFAB387);
 
-  /// Couleurs saturées des annotations, identiques à l'export PDF (lisibles sur papier blanc).
+  /// Saturated annotation colors, matching the PDF export (readable on white paper).
   static const symbol = Color(0xFFE74C3C);
   static const indication = Color(0xFF27AE60);
   static const defaultCrayon = Color(0xFFE74C3C);

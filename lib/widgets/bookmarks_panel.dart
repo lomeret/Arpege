@@ -19,7 +19,7 @@ class BookmarksPanel extends StatelessWidget {
         Expanded(
           child: bookmarks.isEmpty
               ? const Center(
-                  child: Text('Aucun signet',
+                  child: Text('No bookmarks',
                       style: TextStyle(color: AppColors.subtext)))
               : ListView.builder(
                   itemCount: bookmarks.length,
@@ -42,15 +42,15 @@ class BookmarksPanel extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           child: ElevatedButton.icon(
             icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-            label: const Text('Signet à la page courante'),
+            label: const Text('Bookmark current page'),
             onPressed: editor.currentPdfPath == null
                 ? null
                 : () async {
                     final page = editor.currentSourcePage;
                     final label = await promptText(
                       context,
-                      title: 'Nouveau signet',
-                      label: 'Nom du signet (page ${page + 1})',
+                      title: 'New bookmark',
+                      label: 'Bookmark name (page ${page + 1})',
                     );
                     if (label != null) editor.addBookmark(label);
                   },

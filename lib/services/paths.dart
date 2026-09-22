@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-/// Emplacements de stockage, compatibles avec l'ancienne app Python.
+/// Storage locations, compatible with the old Python app.
 ///
-/// Sur desktop, `getApplicationDocumentsDirectory()` renvoie le dossier
-/// « Documents » de l'utilisateur → on retrouve `~/Documents/Arpège/…`.
-/// Sur Android, il renvoie un dossier privé à l'application.
+/// On desktop, `getApplicationDocumentsDirectory()` returns the user's
+/// "Documents" folder -> we end up with `~/Documents/Arpège/…`.
+/// On Android, it returns a directory private to the app.
 class AppPaths {
   static String? _baseDir;
 

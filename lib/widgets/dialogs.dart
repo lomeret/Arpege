@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Demande une chaîne à l'utilisateur (équivalent de `QInputDialog.getText`).
+/// Prompts the user for a string (equivalent of `QInputDialog.getText`).
 Future<String?> promptText(
   BuildContext context, {
   required String title,
@@ -22,7 +22,7 @@ Future<String?> promptText(
       actions: [
         TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Annuler')),
+            child: const Text('Cancel')),
         ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text),
             child: Text(okLabel)),
@@ -31,12 +31,12 @@ Future<String?> promptText(
   );
 }
 
-/// Demande une confirmation oui/non.
+/// Asks for a yes/no confirmation.
 Future<bool> confirm(
   BuildContext context, {
   required String title,
   required String message,
-  String okLabel = 'Confirmer',
+  String okLabel = 'Confirm',
 }) async {
   final result = await showDialog<bool>(
     context: context,
@@ -46,7 +46,7 @@ Future<bool> confirm(
       actions: [
         TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler')),
+            child: const Text('Cancel')),
         ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(okLabel)),
@@ -57,24 +57,24 @@ Future<bool> confirm(
 }
 
 const _palette = [
-  Color(0xFFE74C3C), // rouge (défaut)
+  Color(0xFFE74C3C), // red (default)
   Color(0xFFE67E22), // orange
-  Color(0xFFF1C40F), // jaune
-  Color(0xFF27AE60), // vert
-  Color(0xFF2980B9), // bleu
-  Color(0xFF8E44AD), // violet
-  Color(0xFF16A085), // turquoise
-  Color(0xFF000000), // noir
-  Color(0xFF7F8C8D), // gris
-  Color(0xFFEC407A), // rose
+  Color(0xFFF1C40F), // yellow
+  Color(0xFF27AE60), // green
+  Color(0xFF2980B9), // blue
+  Color(0xFF8E44AD), // purple
+  Color(0xFF16A085), // teal
+  Color(0xFF000000), // black
+  Color(0xFF7F8C8D), // gray
+  Color(0xFFEC407A), // pink
 ];
 
-/// Choix d'une couleur de crayon dans une palette de préréglages.
+/// Picks a pencil color from a preset palette.
 Future<Color?> pickColor(BuildContext context, Color current) {
   return showDialog<Color>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Couleur du crayon'),
+      title: const Text('Pencil color'),
       content: SizedBox(
         width: 260,
         child: Wrap(
@@ -105,13 +105,13 @@ Future<Color?> pickColor(BuildContext context, Color current) {
       actions: [
         TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Annuler')),
+            child: const Text('Cancel')),
       ],
     ),
   );
 }
 
-/// Affiche un message d'information simple.
+/// Shows a simple information message.
 Future<void> showInfo(BuildContext context, String title, String message) {
   return showDialog<void>(
     context: context,

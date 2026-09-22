@@ -1,4 +1,4 @@
-/// Une setlist : une liste ordonnée d'identifiants de partitions.
+/// A setlist: an ordered list of score ids.
 class Setlist {
   final String id;
   String name;

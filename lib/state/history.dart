@@ -1,6 +1,6 @@
 import '../models/annotation_document.dart';
 
-/// Pile d'annulation/rétablissement par instantanés — port de `features/history.py`.
+/// Undo/redo stack based on snapshots — port of `features/history.py`.
 class HistoryManager {
   final int maxDepth;
   final List<AnnotationSnapshot> _undo = [];
@@ -34,7 +34,7 @@ class HistoryManager {
     _redo.clear();
   }
 
-  /// Retire le dernier instantané empilé (ex. tracé au crayon vide).
+  /// Removes the last pushed snapshot (e.g. an empty pencil stroke).
   void popUndo() {
     if (_undo.isNotEmpty) _undo.removeLast();
   }

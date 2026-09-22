@@ -7,10 +7,10 @@ import '../state/editor_controller.dart';
 import '../theme.dart';
 import 'page_order_dialog.dart';
 
-/// Barre d'outils supérieure (port de `build_toolbar` + entrées de menu).
+/// Top toolbar (port of `build_toolbar` + menu entries).
 class ArpegeToolbar extends StatelessWidget {
   final VoidCallback? onTogglePanels;
-  /// État courant des panneaux de droite (allume le bouton bascule).
+  /// Current state of the right-hand panels (lights up the toggle button).
   final bool panelsOpen;
   const ArpegeToolbar({super.key, this.onTogglePanels, this.panelsOpen = true});
 
@@ -46,37 +46,37 @@ class ArpegeToolbar extends StatelessWidget {
                   backgroundColor: AppColors.blue,
                   foregroundColor: AppColors.crust),
               icon: const Icon(Icons.folder_open, size: 18),
-              label: const Text('Ouvrir'),
+              label: const Text('Open'),
               onPressed: () => pickAndOpenPdf(context, editor),
             ),
             _sep(),
-            _iconBtn(Icons.chevron_left, 'Page précédente (←)',
+            _iconBtn(Icons.chevron_left, 'Previous page (←)',
                 hasPdf ? editor.prevPage : null),
             _chip(editor.pageChipText, 86),
-            _iconBtn(Icons.chevron_right, 'Page suivante (→)',
+            _iconBtn(Icons.chevron_right, 'Next page (→)',
                 hasPdf ? editor.nextPage : null),
             _sep(),
-            _iconBtn(Icons.remove, 'Zoom arrière (Ctrl+-)',
+            _iconBtn(Icons.remove, 'Zoom out (Ctrl+-)',
                 hasPdf ? editor.zoomOut : null),
             _ZoomChip(editor: editor),
-            _iconBtn(Icons.add, 'Zoom avant (Ctrl++)',
+            _iconBtn(Icons.add, 'Zoom in (Ctrl++)',
                 hasPdf ? editor.zoomIn : null),
-            _iconBtn(Icons.fit_screen, 'Ajuster à la fenêtre (Ctrl+0)',
+            _iconBtn(Icons.fit_screen, 'Fit to window (Ctrl+0)',
                 hasPdf ? editor.fitView : null),
-            _iconBtn(Icons.auto_stories, 'Gérer les pages',
+            _iconBtn(Icons.auto_stories, 'Manage pages',
                 hasPdf ? () => _managePages(context, editor) : null),
             _ToggleBtn(
               icon: Icons.menu_book,
-              tip: 'Vue double page (Ctrl+D)',
+              tip: 'Two-page spread (Ctrl+D)',
               selected: editor.spreadView,
               onTap: hasPdf
                   ? () => editor.toggleSpread(!editor.spreadView)
                   : null,
             ),
             _sep(),
-            _iconBtn(Icons.undo, 'Annuler (Ctrl+Z)',
+            _iconBtn(Icons.undo, 'Undo (Ctrl+Z)',
                 editor.history.canUndo ? editor.undo : null),
-            _iconBtn(Icons.redo, 'Rétablir (Ctrl+Y)',
+            _iconBtn(Icons.redo, 'Redo (Ctrl+Y)',
                 editor.history.canRedo ? editor.redo : null),
             const SizedBox(width: 24),
             FilledButton.icon(
@@ -84,19 +84,19 @@ class ArpegeToolbar extends StatelessWidget {
                   backgroundColor: AppColors.green,
                   foregroundColor: AppColors.crust),
               icon: const Icon(Icons.save, size: 18),
-              label: const Text('Sauver'),
+              label: const Text('Save'),
               onPressed: () => saveAnnotationsWithFeedback(context, editor),
             ),
             const SizedBox(width: 6),
             OutlinedButton.icon(
               icon: const Icon(Icons.ios_share, size: 18),
-              label: const Text('Exporter'),
+              label: const Text('Export'),
               onPressed: () => exportCurrentPdf(context, editor),
             ),
             _sep(),
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_horiz),
-              tooltip: 'Plus',
+              tooltip: 'More',
               onSelected: (v) {
                 switch (v) {
                   case 'recent':
@@ -111,20 +111,20 @@ class ArpegeToolbar extends StatelessWidget {
                 }
               },
               itemBuilder: (ctx) => const [
-                PopupMenuItem(value: 'recent', child: Text('Fichiers récents…')),
+                PopupMenuItem(value: 'recent', child: Text('Recent files…')),
                 PopupMenuItem(
-                    value: 'load', child: Text('Charger des annotations…')),
+                    value: 'load', child: Text('Load annotations…')),
                 PopupMenuDivider(),
                 PopupMenuItem(
-                    value: 'clear', child: Text('Effacer la page courante')),
+                    value: 'clear', child: Text('Clear current page')),
               ],
             ),
             if (onTogglePanels != null)
               _ToggleBtn(
                 icon: Icons.view_sidebar,
                 tip: panelsOpen
-                    ? 'Masquer les panneaux (F9)'
-                    : 'Afficher les panneaux (F9)',
+                    ? 'Hide panels (F9)'
+                    : 'Show panels (F9)',
                 selected: panelsOpen,
                 onTap: onTogglePanels,
               ),

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Compile Arpège pour Linux (exécutable natif GTK).
-# Prérequis : Flutter + toolchain desktop Linux :
+# Builds Arpège for Linux (native GTK executable).
+# Requirements: Flutter + Linux desktop toolchain:
 #   sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -10,5 +10,5 @@ flutter pub get
 flutter build linux --release
 
 echo
-echo "Build terminé : build/linux/x64/release/bundle/"
-echo "Exécutable : build/linux/x64/release/bundle/arpege"
+echo "Build finished: build/linux/x64/release/bundle/"
+echo "Executable: build/linux/x64/release/bundle/arpege"

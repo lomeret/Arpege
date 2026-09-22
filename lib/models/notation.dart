@@ -1,4 +1,4 @@
-/// Un point d'un tracé au crayon, en coordonnées relatives (0–1) à la page.
+/// A point of a pencil stroke, in coordinates relative (0-1) to the page.
 class StrokePoint {
   double relativeX;
   double relativeY;
@@ -18,8 +18,8 @@ class StrokePoint {
   StrokePoint copy() => StrokePoint(relativeX, relativeY);
 }
 
-/// Une notation musicale ponctuelle : dièse, bémol ou indication texte.
-/// Coordonnées relatives (0–1) à la page, comme dans l'ancien `music_notation.py`.
+/// A single-point musical notation: sharp, flat, or text indication.
+/// Coordinates relative (0-1) to the page, like the old `music_notation.py`.
 class Notation {
   String type; // 'sharp' | 'flat' | 'indication'
   int page;
@@ -27,8 +27,8 @@ class Notation {
   double relativeY;
   String? text;
 
-  /// Facteur d'échelle du symbole (1.0 = taille par défaut). Réglable par
-  /// l'utilisateur pour s'adapter à la taille des portées de chaque partition.
+  /// Scale factor of the symbol (1.0 = default size). Adjustable by the
+  /// user to match the staff size of each score.
   double size;
 
   Notation({
@@ -78,7 +78,7 @@ class Notation {
       );
 }
 
-/// Un tracé au crayon : suite de points + couleur + épaisseur (en points PDF).
+/// A pencil stroke: a sequence of points + color + width (in PDF points).
 class DrawingPath {
   List<StrokePoint> points;
   String color; // '#rrggbb'
@@ -86,10 +86,10 @@ class DrawingPath {
 
   DrawingPath({required this.points, this.color = '#000000', this.size = 3});
 
-  /// Gère l'ancien format (liste simple de points) et le nouveau (dict).
+  /// Handles both the old format (a plain point list) and the new one (a dict).
   factory DrawingPath.fromJson(dynamic data) {
     if (data is List) {
-      // Ancien format : liste brute de points.
+      // Legacy format: a plain list of points.
       return DrawingPath(
         points: data
             .map((p) => StrokePoint.fromJson(Map<String, dynamic>.from(p as Map)))

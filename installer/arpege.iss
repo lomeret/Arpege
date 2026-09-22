@@ -1,11 +1,11 @@
-; Script Inno Setup pour Arpège — génère un installeur setup.exe unique.
-; Compilation : ISCC.exe arpege.iss  (ou via ..\installer\build_installer.py)
-; Les chemins sont relatifs à l'emplacement de ce fichier (dossier installer\).
+; Inno Setup script for Arpège — builds a single setup.exe installer.
+; Compile with: ISCC.exe arpege.iss  (or via ..\installer\build_installer.py)
+; Paths are relative to the location of this file (the installer\ folder).
 
 #define MyAppName "Arpège"
-; Version : surchargeable par ISCC /DMyAppVersion=x.y.z[.build] (voir
-; build_installer.py, qui la lit dans pubspec.yaml et ajoute le numéro de
-; build CI si présent). Valeur de repli si compilé à la main.
+; Version: overridable via ISCC /DMyAppVersion=x.y.z[.build] (see
+; build_installer.py, which reads it from pubspec.yaml and appends the CI
+; build number when present). Fallback value when compiled by hand.
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
@@ -13,8 +13,8 @@
 #define MyAppExeName "arpege.exe"
 
 [Setup]
-; AppId identifie l'app de façon unique (mises à jour / désinstallation).
-; NE PAS changer entre deux versions, sinon Windows croit à deux apps différentes.
+; AppId uniquely identifies the app (updates / uninstall).
+; DO NOT change it between versions, or Windows will treat it as two different apps.
 AppId={{44c3dc8e-168f-47d9-a623-efbfe6b4c358}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -28,19 +28,19 @@ SetupIconFile=..\assets\Logo.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-; App Flutter 64 bits uniquement.
+; Flutter app, 64-bit only.
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
-Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; Copie TOUT le dossier Release (exe + DLL + data\) — c'est ce qui manquait quand
-; tu copiais le .exe seul sur le bureau.
+; Copies the ENTIRE Release folder (exe + DLLs + data\) — this is what was
+; missing when only the .exe was copied to the desktop.
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]

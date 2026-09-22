@@ -1,15 +1,15 @@
 import 'notation.dart';
 import 'bookmark.dart';
 
-/// Ensemble des annotations d'une partition (une entrée par PDF).
+/// All annotations for a score (one entry per PDF).
 ///
-/// Sérialisation strictement compatible avec l'ancien format de `main.py`
-/// (`save_annotations` / `_restore_annotations`), pour reprendre les fichiers
-/// `~/Documents/Arpège/annotations/<nom>_annotations.json` existants.
+/// Serialization strictly compatible with the old `main.py` format
+/// (`save_annotations` / `_restore_annotations`), so existing
+/// `~/Documents/Arpège/annotations/<name>_annotations.json` files still load.
 class AnnotationDocument {
   List<Notation> notations;
   Map<int, List<DrawingPath>> drawings;
-  List<dynamic> generalAnnotations; // vestige : conservé pour fidélité de round-trip
+  List<dynamic> generalAnnotations; // legacy leftover: kept for round-trip fidelity
   List<Bookmark> bookmarks;
   List<int>? pageSequence;
 
@@ -43,11 +43,11 @@ class AnnotationDocument {
     rawDrawings.forEach((pageStr, value) {
       final page = int.parse(pageStr);
       if (value is List) {
-        // Peut être une liste de tracés (dicts) ou l'ancien format (liste de points).
+        // Can be a list of paths (dicts) or the old format (a list of points).
         if (value.isNotEmpty &&
             value.first is Map &&
             (value.first as Map).containsKey('relative_x')) {
-          // Ancien format : une liste simple de points → un seul tracé.
+          // Legacy format: a plain list of points -> a single path.
           drawings[page] = [DrawingPath.fromJson(value)];
         } else {
           drawings[page] = value.map((d) => DrawingPath.fromJson(d)).toList();
@@ -75,7 +75,7 @@ class AnnotationDocument {
     );
   }
 
-  /// Construit la structure de fichier complète (identique à `save_annotations`).
+  /// Builds the full file structure (identical to `save_annotations`).
   Map<String, dynamic> toFileJson({
     required String pdfPath,
     required String pdfName,
@@ -104,7 +104,7 @@ class AnnotationDocument {
     };
   }
 
-  /// Instantané profond pour l'historique undo/redo.
+  /// Deep snapshot for undo/redo history.
   AnnotationSnapshot snapshot() => AnnotationSnapshot(
         notations: notations.map((n) => n.copy()).toList(),
         drawings: {
@@ -122,7 +122,7 @@ class AnnotationDocument {
   }
 }
 
-/// Instantané des seules données annotables (notations + tracés), pour l'historique.
+/// Snapshot of the annotatable data only (notations + strokes), for history.
 class AnnotationSnapshot {
   final List<Notation> notations;
   final Map<int, List<DrawingPath>> drawings;

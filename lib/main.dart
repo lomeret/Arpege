@@ -18,9 +18,9 @@ import 'widgets/tool_sidebar.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Android : dessine sous les barres système (edge-to-edge) et rend-les
-  // transparentes avec des icônes claires, pour éviter les bandeaux blancs
-  // Xiaomi qui recouvrent la toolbar et la barre de statut.
+  // Android: draw under the system bars (edge-to-edge) and make them
+  // transparent with light icons, to avoid the white Xiaomi bands that
+  // cover the toolbar and status bar.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -29,10 +29,10 @@ Future<void> main() async {
     systemNavigationBarColor: Colors.transparent,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
-  pdfrxFlutterInitialize(); // requis par pdfrx 2.x avant toute utilisation
+  pdfrxFlutterInitialize(); // required by pdfrx 2.x before any use
   final library = LibraryController();
   await library.load();
-  // Migration : importe les anciens fichiers récents dans la bibliothèque.
+  // Migration: import the old recent files into the library.
   await library.importPaths(await RecentFiles.load());
   runApp(ArpegeApp(library: library));
 }
@@ -70,8 +70,8 @@ class ArpegeHome extends StatefulWidget {
 class _ArpegeHomeState extends State<ArpegeHome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  /// Panneaux de droite (Bibliothèque / Signets / Setlists) en mode large.
-  /// En mode étroit ils vivent dans l'endDrawer, qui a sa propre fermeture.
+  /// Right-hand panels (Library / Bookmarks / Setlists) in wide mode.
+  /// In narrow mode they live in the endDrawer, which has its own close action.
   bool _panelsOpen = true;
 
   void _togglePanels(bool wide) {
@@ -115,11 +115,11 @@ class _ArpegeHomeState extends State<ArpegeHome> {
         const SingleActivator(LogicalKeyboardKey.arrowRight): editor.nextPage,
         const SingleActivator(LogicalKeyboardKey.pageUp): editor.prevPage,
         const SingleActivator(LogicalKeyboardKey.pageDown): editor.nextPage,
-        // Pédales tourne-pages Bluetooth/USB (AirTurn, PageFlip, iRig
-        // BlueTurn, Donner…) : elles s'annoncent comme un clavier HID mais
-        // leur mapping par défaut varie selon le modèle — on couvre les
-        // configurations les plus courantes en plus des flèches gauche/droite
-        // et Page Up/Down déjà gérées ci-dessus.
+        // Bluetooth/USB page-turn pedals (AirTurn, PageFlip, iRig BlueTurn,
+        // Donner…): they announce themselves as an HID keyboard, but their
+        // default mapping varies by model — cover the most common
+        // configurations in addition to the left/right arrows and
+        // Page Up/Down already handled above.
         const SingleActivator(LogicalKeyboardKey.arrowUp): editor.prevPage,
         const SingleActivator(LogicalKeyboardKey.arrowDown): editor.nextPage,
         const SingleActivator(LogicalKeyboardKey.space): editor.nextPage,
@@ -142,7 +142,7 @@ class _ArpegeHomeState extends State<ArpegeHome> {
     if (editor.currentPdfPath == null) return;
     final page = editor.currentSourcePage;
     final label = await promptText(context,
-        title: 'Nouveau signet', label: 'Nom du signet (page ${page + 1})');
+        title: 'New bookmark', label: 'Bookmark name (page ${page + 1})');
     if (label != null) editor.addBookmark(label);
   }
 
@@ -207,9 +207,9 @@ class _ArpegeHomeState extends State<ArpegeHome> {
   }
 }
 
-/// Panneaux latéraux en onglets (Bibliothèque / Signets / Setlists).
+/// Tabbed side panels (Library / Bookmarks / Setlists).
 class PanelsView extends StatelessWidget {
-  /// Ferme le panneau (repli latéral en mode large, fermeture du drawer sinon).
+  /// Closes the panel (collapses it in wide mode, closes the drawer otherwise).
   final VoidCallback? onClose;
   const PanelsView({super.key, this.onClose});
 
@@ -222,8 +222,8 @@ class PanelsView extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              // Libellés compactés : la croix prend de la place sur 320 px et
-              // « Bibliothèque » est le plus long des trois onglets.
+              // Compact labels: the close button takes up room at 320 px and
+              // "Bookmarks" is the longest of the three tab names.
               const Expanded(
                 child: TabBar(
                   labelColor: AppColors.blue,
@@ -234,8 +234,8 @@ class PanelsView extends StatelessWidget {
                       TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   unselectedLabelStyle: TextStyle(fontSize: 13),
                   tabs: [
-                    Tab(text: 'Bibliothèque'),
-                    Tab(text: 'Signets'),
+                    Tab(text: 'Library'),
+                    Tab(text: 'Bookmarks'),
                     Tab(text: 'Setlists'),
                   ],
                 ),
@@ -243,7 +243,7 @@ class PanelsView extends StatelessWidget {
               if (onClose != null)
                 IconButton(
                   icon: const Icon(Icons.close, size: 18),
-                  tooltip: 'Fermer le panneau (F9)',
+                  tooltip: 'Close panel (F9)',
                   visualDensity: VisualDensity.compact,
                   color: AppColors.subtext,
                   onPressed: onClose,
@@ -287,7 +287,7 @@ class _StatusBar extends StatelessWidget {
             ),
           ),
           const Text(
-            'molette : zoom   •   glisser : déplacer   •   Échap : désélectionner',
+            'scroll: zoom   •   drag: pan   •   Esc: deselect',
             style: TextStyle(color: AppColors.subtext, fontSize: 12),
           ),
         ],

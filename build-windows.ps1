@@ -1,7 +1,7 @@
-# Compile Arpège pour Windows (.exe).
-# À exécuter SUR une machine Windows (les builds desktop Flutter sont host-only).
-# Prérequis : Flutter + Visual Studio 2022 « Desktop development with C++ »,
-#             et le Mode développeur Windows activé (pdfrx utilise des liens symboliques).
+# Builds Arpège for Windows (.exe).
+# Must be run ON a Windows machine (Flutter desktop builds are host-only).
+# Requirements: Flutter + Visual Studio 2022 "Desktop development with C++",
+#               and Windows Developer Mode enabled (pdfrx uses symbolic links).
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -10,5 +10,5 @@ flutter pub get
 flutter build windows --release
 
 Write-Host ""
-Write-Host "Build termine : build\windows\x64\runner\Release\"
-Write-Host "Executable : build\windows\x64\runner\Release\arpege.exe"
+Write-Host "Build finished: build\windows\x64\runner\Release\"
+Write-Host "Executable: build\windows\x64\runner\Release\arpege.exe"
