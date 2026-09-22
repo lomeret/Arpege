@@ -151,8 +151,10 @@ class _ArpegeHomeState extends State<ArpegeHome> {
               endDrawer: wide
                   ? null
                   : Drawer(
-                      child: PanelsView(
-                        onClose: () => Navigator.of(context).maybePop(),
+                      child: SafeArea(
+                        child: PanelsView(
+                          onClose: () => Navigator.of(context).maybePop(),
+                        ),
                       ),
                     ),
               body: SafeArea(
