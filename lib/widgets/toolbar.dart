@@ -73,6 +73,8 @@ class ArpegeToolbar extends StatelessWidget {
                   ? () => editor.toggleSpread(!editor.spreadView)
                   : null,
             ),
+            _iconBtn(Icons.fullscreen, 'Performance mode (F5)',
+                hasPdf ? () => editor.setPerformanceMode(true) : null),
             _sep(),
             _iconBtn(Icons.undo, 'Undo (Ctrl+Z)',
                 editor.history.canUndo ? editor.undo : null),

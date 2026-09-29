@@ -231,4 +231,36 @@ void main() {
       expect(editor.lastError, isNotNull);
     });
   });
+
+  group('performance mode', () {
+    test('cannot be entered without a score', () {
+      editor.setPerformanceMode(true);
+      expect(editor.performanceMode, isFalse);
+    });
+
+    test('drops the active tool and locks the tools', () async {
+      await editor.openPdf('/scores/a.pdf');
+      editor.setTool(Tool.crayon);
+      editor.setPerformanceMode(true);
+      expect(editor.performanceMode, isTrue);
+      expect(editor.activeTool, isNull);
+
+      editor.setTool(Tool.sharp);
+      expect(editor.activeTool, isNull);
+
+      editor.setPerformanceMode(false);
+      editor.setTool(Tool.sharp);
+      expect(editor.activeTool, Tool.sharp);
+    });
+
+    test('commits a stroke in progress when entered', () async {
+      await editor.openPdf('/scores/a.pdf');
+      editor.setTool(Tool.crayon);
+      editor.beginStroke(0, 0.1, 0.1);
+      editor.extendStroke(0.2, 0.2);
+      editor.setPerformanceMode(true);
+      expect(editor.activeStrokePoints, isNull);
+      expect(editor.doc.drawings[0], hasLength(1));
+    });
+  });
 }

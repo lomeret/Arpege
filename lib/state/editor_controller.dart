@@ -101,6 +101,10 @@ class EditorController extends ChangeNotifier {
 
   bool spreadView = false;
 
+  /// Stage mode: every menu, toolbar and panel is hidden and the editing
+  /// tools are locked, so a stray touch can only turn the page.
+  bool performanceMode = false;
+
   // Pencil stroke in progress (rendered by the view, committed at the end).
   List<StrokePoint>? activeStrokePoints;
   int? activeStrokePage;
@@ -270,6 +274,7 @@ class EditorController extends ChangeNotifier {
   // ---- Tools --------------------------------------------------------
 
   void setTool(Tool? tool) {
+    if (performanceMode && tool != null) return;
     activeTool = tool;
     _statusHint = switch (tool) {
       null => 'No tool selected  •  drag to pan the view',
@@ -461,6 +466,22 @@ class EditorController extends ChangeNotifier {
 
   void toggleSpread(bool enabled) {
     spreadView = enabled;
+    notifyListeners();
+  }
+
+  void setPerformanceMode(bool enabled) {
+    if (enabled == performanceMode) return;
+    // Nothing to perform without a score.
+    if (enabled && currentPdfPath == null) return;
+    if (enabled) {
+      // Drop the tool first: in performance mode a tap must turn the page.
+      endStroke();
+      setTool(null);
+    }
+    performanceMode = enabled;
+    _statusHint = enabled
+        ? 'Performance mode  •  tap left/right to turn the page  •  Esc to exit'
+        : 'No tool selected  •  drag to pan the view';
     notifyListeners();
   }
 

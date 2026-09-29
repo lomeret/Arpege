@@ -99,6 +99,14 @@ class ArpegeHome extends StatefulWidget {
 class _ArpegeHomeState extends State<ArpegeHome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  /// Receives the keyboard shortcuts. Refocused when entering or leaving
+  /// performance mode: the widget holding the focus may just have been
+  /// removed, and the page-turn pedals would then go unheard.
+  final _shortcutsFocus = FocusNode(debugLabel: 'shortcuts');
+
+  /// Performance mode last applied to the system bars.
+  bool _immersive = false;
+
   LibraryController? _library;
   EditorController? _editor;
 
@@ -109,7 +117,9 @@ class _ArpegeHomeState extends State<ArpegeHome> {
     // Storage failures used to be swallowed; they are now reported by the
     // controllers and shown here, once each.
     _library = context.read<LibraryController>()..addListener(_showErrors);
-    _editor = context.read<EditorController>()..addListener(_showErrors);
+    _editor = context.read<EditorController>()
+      ..addListener(_showErrors)
+      ..addListener(_syncPerformanceMode);
     WidgetsBinding.instance.addPostFrameCallback((_) => _showErrors());
   }
 
@@ -117,6 +127,8 @@ class _ArpegeHomeState extends State<ArpegeHome> {
   void dispose() {
     _library?.removeListener(_showErrors);
     _editor?.removeListener(_showErrors);
+    _editor?.removeListener(_syncPerformanceMode);
+    _shortcutsFocus.dispose();
     super.dispose();
   }
 
@@ -134,6 +146,24 @@ class _ArpegeHomeState extends State<ArpegeHome> {
       editor.clearError();
       _showError(message);
     }
+  }
+
+  /// Hides the Android status and navigation bars in performance mode (a
+  /// swipe from the edge shows them briefly). No effect on desktop.
+  void _syncPerformanceMode() {
+    final editor = _editor;
+    if (editor == null || editor.performanceMode == _immersive) return;
+    _immersive = editor.performanceMode;
+    SystemChrome.setEnabledSystemUIMode(
+        _immersive ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge);
+    if (_immersive) {
+      // The drawer holds panels that performance mode hides.
+      if (_scaffoldKey.currentState?.isEndDrawerOpen ?? false) {
+        Navigator.of(context).maybePop();
+      }
+    }
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _shortcutsFocus.requestFocus());
   }
 
   void _showError(String message) {
@@ -203,7 +233,11 @@ class _ArpegeHomeState extends State<ArpegeHome> {
         const SingleActivator(LogicalKeyboardKey.home): editor.goFirst,
         const SingleActivator(LogicalKeyboardKey.end): editor.goLast,
         const SingleActivator(LogicalKeyboardKey.escape): () =>
-            editor.setTool(null),
+            editor.performanceMode
+                ? editor.setPerformanceMode(false)
+                : editor.setTool(null),
+        const SingleActivator(LogicalKeyboardKey.f5): () =>
+            editor.setPerformanceMode(!editor.performanceMode),
         const SingleActivator(LogicalKeyboardKey.f9): () =>
             _togglePanels(MediaQuery.sizeOf(context).width >= 900),
         const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): () =>
@@ -227,9 +261,16 @@ class _ArpegeHomeState extends State<ArpegeHome> {
     return CallbackShortcuts(
       bindings: _shortcuts(editor),
       child: Focus(
+        focusNode: _shortcutsFocus,
         autofocus: true,
         child: LayoutBuilder(
           builder: (context, constraints) {
+            if (editor.performanceMode) {
+              return const Scaffold(
+                backgroundColor: AppColors.crust,
+                body: _PerformanceView(),
+              );
+            }
             final wide = constraints.maxWidth >= 900;
             return Scaffold(
               key: _scaffoldKey,
@@ -262,12 +303,16 @@ class _ArpegeHomeState extends State<ArpegeHome> {
                     Container(
                       width: 320,
                       decoration: const BoxDecoration(
-                        color: AppColors.mantle,
                         border: Border(
                             left: BorderSide(color: AppColors.surface0)),
                       ),
-                      child: PanelsView(
-                        onClose: () => setState(() => _panelsOpen = false),
+                      // The background is a Material, not the decoration:
+                      // the list tiles paint their ink splashes on it.
+                      child: Material(
+                        color: AppColors.mantle,
+                        child: PanelsView(
+                          onClose: () => setState(() => _panelsOpen = false),
+                        ),
                       ),
                     ),
                 ],
@@ -277,6 +322,37 @@ class _ArpegeHomeState extends State<ArpegeHome> {
           },
         ),
       ),
+    );
+  }
+}
+
+/// Performance mode: the score alone, edge to edge, plus a discreet exit
+/// button in a corner, out of the way of the page-turn tap zones.
+class _PerformanceView extends StatelessWidget {
+  const _PerformanceView();
+
+  @override
+  Widget build(BuildContext context) {
+    final editor = context.read<EditorController>();
+    return Stack(
+      children: [
+        const Positioned.fill(child: SheetView()),
+        Positioned(
+          top: 0,
+          right: 0,
+          child: SafeArea(
+            child: Opacity(
+              opacity: 0.35,
+              child: IconButton(
+                icon: const Icon(Icons.fullscreen_exit),
+                tooltip: 'Exit performance mode (Esc)',
+                color: AppColors.subtext,
+                onPressed: () => editor.setPerformanceMode(false),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
