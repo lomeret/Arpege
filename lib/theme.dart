@@ -20,6 +20,7 @@ class AppColors {
   static const symbol = Color(0xFFE74C3C);
   static const indication = Color(0xFF27AE60);
   static const defaultCrayon = Color(0xFFE74C3C);
+  static const defaultHighlighter = Color(0xFFFFEB3B);
 }
 
 ThemeData buildArpegeTheme() {

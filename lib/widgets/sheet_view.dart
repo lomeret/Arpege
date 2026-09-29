@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/notation.dart';
 import '../services/logger.dart';
 import '../state/editor_controller.dart';
 import '../theme.dart';
@@ -255,12 +256,17 @@ class _SheetViewState extends State<SheetView> {
 
   // ---- Gestures: drag drawing / erasing ----------------------
 
+  static bool _drawing(Tool? tool) =>
+      tool == Tool.crayon || tool == Tool.highlighter;
+
+  static bool _dragTool(Tool? tool) => _drawing(tool) || tool == Tool.eraser;
+
   void _onPanStart(DragStartDetails d) {
     final slot = _slotAt(d.localPosition);
     if (slot == null) return;
     _activeSlot = slot;
     final rel = slot.canvasToRel(d.localPosition);
-    if (c.activeTool == Tool.crayon) {
+    if (_drawing(c.activeTool)) {
       c.beginStroke(slot.page, rel.dx, rel.dy);
     } else if (c.activeTool == Tool.eraser) {
       c.eraseAt(slot.page, rel.dx, rel.dy);
@@ -272,7 +278,7 @@ class _SheetViewState extends State<SheetView> {
     if (slot == null) return;
     final clamped = _clampToSlot(slot, d.localPosition);
     final rel = slot.canvasToRel(clamped);
-    if (c.activeTool == Tool.crayon) {
+    if (_drawing(c.activeTool)) {
       c.extendStroke(rel.dx, rel.dy);
     } else if (c.activeTool == Tool.eraser) {
       c.eraseAt(slot.page, rel.dx, rel.dy);
@@ -280,8 +286,14 @@ class _SheetViewState extends State<SheetView> {
   }
 
   void _onPanEnd(DragEndDetails d) {
-    if (c.activeTool == Tool.crayon) c.endStroke();
+    if (_drawing(c.activeTool)) c.endStroke();
     _activeSlot = null;
+  }
+
+  (int, DrawingPath)? _activeStroke() {
+    final stroke = c.activeStroke;
+    final page = c.activeStrokePage;
+    return stroke == null || page == null ? null : (page, stroke);
   }
 
   // ---- Full-screen tap: turn the page ----------------------------
@@ -320,22 +332,16 @@ class _SheetViewState extends State<SheetView> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapUp: tool != null ? _onCanvasTap : null,
-            onPanStart:
-                (tool == Tool.crayon || tool == Tool.eraser) ? _onPanStart : null,
-            onPanUpdate:
-                (tool == Tool.crayon || tool == Tool.eraser) ? _onPanUpdate : null,
-            onPanEnd:
-                (tool == Tool.crayon || tool == Tool.eraser) ? _onPanEnd : null,
+            onPanStart: _dragTool(tool) ? _onPanStart : null,
+            onPanUpdate: _dragTool(tool) ? _onPanUpdate : null,
+            onPanEnd: _dragTool(tool) ? _onPanEnd : null,
             child: CustomPaint(
               size: _canvasSize,
               painter: AnnotationPainter(
                 slots: _slots,
                 notations: c.doc.notations,
                 drawings: c.doc.drawings,
-                activeStrokePoints: c.activeStrokePoints,
-                activeStrokePage: c.activeStrokePage,
-                crayonColor: c.crayonColor,
-                crayonSize: c.crayonSize,
+                activeStroke: _activeStroke,
                 showLabels: _slots.length > 1,
                 repaint: c.strokeTick,
               ),

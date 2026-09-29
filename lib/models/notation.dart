@@ -78,13 +78,29 @@ class Notation {
       );
 }
 
-/// A pencil stroke: a sequence of points + color + width (in PDF points).
+/// A freehand stroke: a sequence of points + color + width (in PDF points).
+/// Drawn either with the pencil or with the highlighter, which is wide,
+/// translucent and multiplied onto the page so the notes stay readable.
 class DrawingPath {
+  static const pencil = 'pencil';
+  static const highlighter = 'highlighter';
+
+  /// Opacity of highlighter strokes, on screen and in the exported PDF.
+  static const highlighterOpacity = 0.4;
+
   List<StrokePoint> points;
   String color; // '#rrggbb'
   double size;
+  String tool; // [pencil] | [highlighter]
 
-  DrawingPath({required this.points, this.color = '#000000', this.size = 3});
+  DrawingPath({
+    required this.points,
+    this.color = '#000000',
+    this.size = 3,
+    this.tool = pencil,
+  });
+
+  bool get isHighlighter => tool == highlighter;
 
   /// Handles both the old format (a plain point list) and the new one (a dict).
   factory DrawingPath.fromJson(dynamic data) {
@@ -106,6 +122,7 @@ class DrawingPath {
           .toList(),
       color: (map['color'] as String?) ?? '#000000',
       size: (map['size'] as num?)?.toDouble() ?? 3,
+      tool: (map['tool'] as String?) ?? pencil,
     );
   }
 
@@ -113,11 +130,13 @@ class DrawingPath {
         'points': points.map((p) => p.toJson()).toList(),
         'color': color,
         'size': size,
+        'tool': tool,
       };
 
   DrawingPath copy() => DrawingPath(
         points: points.map((p) => p.copy()).toList(),
         color: color,
         size: size,
+        tool: tool,
       );
 }

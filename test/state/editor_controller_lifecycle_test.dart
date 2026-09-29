@@ -263,4 +263,43 @@ void main() {
       expect(editor.doc.drawings[0], hasLength(1));
     });
   });
+
+  group('freehand strokes', () {
+    test('the stroke in progress grows with every point', () async {
+      await editor.openPdf('/scores/a.pdf');
+      editor.setTool(Tool.crayon);
+      editor.beginStroke(0, 0.1, 0.1);
+      final stroke = editor.activeStroke;
+      editor.extendStroke(0.2, 0.2);
+      editor.extendStroke(0.3, 0.3);
+      // Same object, updated in place: a painter reading it sees the growth.
+      expect(identical(editor.activeStroke, stroke), isTrue);
+      expect(stroke!.points, hasLength(3));
+    });
+
+    test('the highlighter commits a highlighter stroke with its own style',
+        () async {
+      await editor.openPdf('/scores/a.pdf');
+      editor.setTool(Tool.highlighter);
+      editor.setHighlighterSize(20);
+      editor.beginStroke(0, 0.1, 0.1);
+      editor.extendStroke(0.2, 0.1);
+      editor.endStroke();
+      final committed = editor.doc.drawings[0]!.single;
+      expect(committed.isHighlighter, isTrue);
+      expect(committed.size, 20);
+      expect(committed.color, isNot(editor.crayonColorHex));
+    });
+
+    test('the pencil still commits a pencil stroke', () async {
+      await editor.openPdf('/scores/a.pdf');
+      editor.setTool(Tool.crayon);
+      editor.beginStroke(0, 0.1, 0.1);
+      editor.extendStroke(0.2, 0.1);
+      editor.endStroke();
+      final committed = editor.doc.drawings[0]!.single;
+      expect(committed.isHighlighter, isFalse);
+      expect(committed.color, editor.crayonColorHex);
+    });
+  });
 }

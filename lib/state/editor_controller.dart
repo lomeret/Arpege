@@ -19,7 +19,7 @@ import '../theme.dart';
 import 'history.dart';
 import 'library_controller.dart';
 
-enum Tool { crayon, sharp, flat, indication, eraser }
+enum Tool { crayon, highlighter, sharp, flat, indication, eraser }
 
 /// Eraser click tolerance, in relative coordinates.
 const double kEraserTolerance = 0.03;
@@ -96,6 +96,11 @@ class EditorController extends ChangeNotifier {
   /// Pencil stroke width, in PDF points.
   double crayonSize = 4;
 
+  String _highlighterColorHex = _colorToHex(AppColors.defaultHighlighter);
+
+  /// Highlighter stroke width, in PDF points.
+  double highlighterSize = 14;
+
   /// Scale applied to the next sharps/flats/indications placed.
   double notationSize = 1.0;
 
@@ -105,9 +110,14 @@ class EditorController extends ChangeNotifier {
   /// tools are locked, so a stray touch can only turn the page.
   bool performanceMode = false;
 
-  // Pencil stroke in progress (rendered by the view, committed at the end).
-  List<StrokePoint>? activeStrokePoints;
+  // Stroke in progress (rendered by the view, committed at the end).
+  // Not announced through notifyListeners — that would rebuild the whole
+  // window at every pointer move — but through [strokeTick]: the painter
+  // must therefore read it from here at paint time, never keep a copy.
+  DrawingPath? activeStroke;
   int? activeStrokePage;
+
+  List<StrokePoint>? get activeStrokePoints => activeStroke?.points;
 
   String get statusHint => _statusHint;
   String _statusHint = 'Open a score to get started  •  Ctrl+O';
@@ -130,6 +140,7 @@ class EditorController extends ChangeNotifier {
 
   Color get crayonColor => _hexToColor(_crayonColorHex);
   String get crayonColorHex => _crayonColorHex;
+  Color get highlighterColor => _hexToColor(_highlighterColorHex);
 
   // ---- Unsaved-changes tracking -----------------------------------------
 
@@ -279,6 +290,8 @@ class EditorController extends ChangeNotifier {
     _statusHint = switch (tool) {
       null => 'No tool selected  •  drag to pan the view',
       Tool.crayon => 'Pencil  •  draw directly on the score',
+      Tool.highlighter =>
+        'Highlighter  •  mark passages, the notes stay visible',
       Tool.sharp => 'Sharp  •  tap where you want to place it',
       Tool.flat => 'Flat  •  tap where you want to place it',
       Tool.indication => 'Indication  •  tap then type the text',
@@ -294,6 +307,16 @@ class EditorController extends ChangeNotifier {
 
   void setCrayonSize(double size) {
     crayonSize = size;
+    notifyListeners();
+  }
+
+  void setHighlighterColor(Color color) {
+    _highlighterColorHex = _colorToHex(color);
+    notifyListeners();
+  }
+
+  void setHighlighterSize(double size) {
+    highlighterSize = size;
     notifyListeners();
   }
 
@@ -366,29 +389,34 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Pencil stroke
+  // Freehand stroke (pencil or highlighter, depending on the active tool).
   void beginStroke(int page, double relX, double relY) {
+    final highlighter = activeTool == Tool.highlighter;
     activeStrokePage = page;
-    activeStrokePoints = [StrokePoint(relX, relY)];
+    activeStroke = DrawingPath(
+      points: [StrokePoint(relX, relY)],
+      color: highlighter ? _highlighterColorHex : _crayonColorHex,
+      size: highlighter ? highlighterSize : crayonSize,
+      tool: highlighter ? DrawingPath.highlighter : DrawingPath.pencil,
+    );
     strokeTick.value++;
   }
 
   void extendStroke(double relX, double relY) {
-    if (activeStrokePoints == null) return;
-    activeStrokePoints!.add(StrokePoint(relX, relY));
+    final stroke = activeStroke;
+    if (stroke == null) return;
+    stroke.points.add(StrokePoint(relX, relY));
     strokeTick.value++;
   }
 
   void endStroke() {
-    final points = activeStrokePoints;
+    final stroke = activeStroke;
     final page = activeStrokePage;
-    activeStrokePoints = null;
+    activeStroke = null;
     activeStrokePage = null;
-    if (points != null && page != null && points.length > 1) {
+    if (stroke != null && page != null && stroke.points.length > 1) {
       _pushHistory();
-      doc.drawings
-          .putIfAbsent(page, () => [])
-          .add(DrawingPath(points: points, color: _crayonColorHex, size: crayonSize));
+      doc.drawings.putIfAbsent(page, () => []).add(stroke);
       notifyListeners();
     } else {
       strokeTick.value++;

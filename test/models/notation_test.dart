@@ -85,5 +85,21 @@ void main() {
       copy.points.add(StrokePoint(1, 1));
       expect(original.points, hasLength(1));
     });
+
+    test('the highlighter tool survives a round-trip and a copy', () {
+      final original = DrawingPath(
+          points: [StrokePoint(0, 0)], tool: DrawingPath.highlighter);
+      expect(DrawingPath.fromJson(original.toJson()).isHighlighter, isTrue);
+      expect(original.copy().isHighlighter, isTrue);
+    });
+
+    test('fromJson defaults to the pencil when the tool is absent', () {
+      final restored = DrawingPath.fromJson({
+        'points': [
+          {'relative_x': 0.2, 'relative_y': 0.4},
+        ],
+      });
+      expect(restored.tool, DrawingPath.pencil);
+    });
   });
 }

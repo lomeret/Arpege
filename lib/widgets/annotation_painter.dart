@@ -44,20 +44,17 @@ class AnnotationPainter extends CustomPainter {
   final List<PageSlot> slots;
   final List<Notation> notations;
   final Map<int, List<DrawingPath>> drawings;
-  final List<StrokePoint>? activeStrokePoints;
-  final int? activeStrokePage;
-  final Color crayonColor;
-  final double crayonSize;
+
+  /// Stroke being drawn and its page, read at paint time: the stroke grows
+  /// between two rebuilds of the widget, and only [repaint] announces it.
+  final (int, DrawingPath)? Function() activeStroke;
   final bool showLabels;
 
   AnnotationPainter({
     required this.slots,
     required this.notations,
     required this.drawings,
-    required this.activeStrokePoints,
-    required this.activeStrokePage,
-    required this.crayonColor,
-    required this.crayonSize,
+    required this.activeStroke,
     required this.showLabels,
     required Listenable repaint,
   }) : super(repaint: repaint);
@@ -95,11 +92,13 @@ class AnnotationPainter extends CustomPainter {
         _paintLabel(canvas, slot);
       }
 
-      // Annotations clipped to the band.
+      // Annotations clipped to the band. Highlighter underneath, so the
+      // symbols and pencil strokes placed over it keep their color.
       canvas.save();
       canvas.clipRect(slot.rect);
+      _paintDrawings(canvas, slot, highlighter: true);
       _paintNotations(canvas, slot);
-      _paintDrawings(canvas, slot);
+      _paintDrawings(canvas, slot, highlighter: false);
       canvas.restore();
     }
   }
@@ -160,32 +159,47 @@ class AnnotationPainter extends CustomPainter {
     }
   }
 
-  void _paintDrawings(Canvas canvas, PageSlot slot) {
+  void _paintDrawings(Canvas canvas, PageSlot slot,
+      {required bool highlighter}) {
     final pagePaths = drawings[slot.page] ?? const [];
     for (final path in pagePaths) {
-      _paintStroke(canvas, slot, path.points, _hexToColor(path.color), path.size);
+      if (path.isHighlighter == highlighter) _paintStroke(canvas, slot, path);
     }
     // Stroke in progress.
-    if (activeStrokePage == slot.page && activeStrokePoints != null) {
-      _paintStroke(canvas, slot, activeStrokePoints!, crayonColor, crayonSize);
+    final active = activeStroke();
+    if (active != null &&
+        active.$1 == slot.page &&
+        active.$2.isHighlighter == highlighter) {
+      _paintStroke(canvas, slot, active.$2);
     }
   }
 
-  void _paintStroke(Canvas canvas, PageSlot slot, List<StrokePoint> points,
-      Color color, double size) {
-    if (points.length < 2) return;
+  void _paintStroke(Canvas canvas, PageSlot slot, DrawingPath stroke) {
+    final points = stroke.points;
+    if (points.isEmpty) return;
     // Width in PDF points, converted to the scale of the rendered page.
-    final width = size * slot.rect.width / 595.0;
+    final width = stroke.size * slot.rect.width / 595.0;
+    final color = _hexToColor(stroke.color);
     final paint = Paint()
-      ..color = color
+      ..color = stroke.isHighlighter
+          ? color.withValues(alpha: DrawingPath.highlighterOpacity)
+          : color
+      // Multiply: black notes stay black, only the white paper is tinted.
+      ..blendMode =
+          stroke.isHighlighter ? BlendMode.multiply : BlendMode.srcOver
       ..strokeWidth = width
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
 
-    final path = Path();
     final first = slot.relToCanvas(points.first.relativeX, points.first.relativeY);
+    if (points.length == 1) {
+      // Just touched down: show a dot right away instead of nothing.
+      canvas.drawPoints(ui.PointMode.points, [first], paint);
+      return;
+    }
+    final path = Path();
     path.moveTo(first.dx, first.dy);
     for (var i = 1; i < points.length; i++) {
       final p = slot.relToCanvas(points[i].relativeX, points[i].relativeY);

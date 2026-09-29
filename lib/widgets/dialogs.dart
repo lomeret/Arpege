@@ -69,19 +69,34 @@ const _palette = [
   Color(0xFFEC407A), // pink
 ];
 
-/// Picks a pencil color from a preset palette.
-Future<Color?> pickColor(BuildContext context, Color current) {
+/// Light, saturated tints: they read well once multiplied onto the paper.
+const highlighterPalette = [
+  Color(0xFFFFEB3B), // yellow (default)
+  Color(0xFF76FF03), // green
+  Color(0xFF40C4FF), // blue
+  Color(0xFFFF80AB), // pink
+  Color(0xFFFFAB40), // orange
+  Color(0xFFB388FF), // purple
+];
+
+/// Picks a pencil (or highlighter) color from a preset palette.
+Future<Color?> pickColor(
+  BuildContext context,
+  Color current, {
+  String title = 'Pencil color',
+  List<Color> palette = _palette,
+}) {
   return showDialog<Color>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Pencil color'),
+      title: Text(title),
       content: SizedBox(
         width: 260,
         child: Wrap(
           spacing: 10,
           runSpacing: 10,
           children: [
-            for (final color in _palette)
+            for (final color in palette)
               InkWell(
                 onTap: () => Navigator.of(ctx).pop(color),
                 child: Container(

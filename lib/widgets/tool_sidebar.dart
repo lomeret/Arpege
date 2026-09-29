@@ -5,14 +5,15 @@ import '../state/editor_controller.dart';
 import '../theme.dart';
 import 'dialogs.dart';
 
-/// Vertical tool rail: pencil, sharp, flat, indication, eraser, color,
-/// thickness, clear (port of `build_sidebar`).
+/// Vertical tool rail: pencil, highlighter, sharp, flat, indication, eraser,
+/// color, thickness, clear (port of `build_sidebar`).
 class ToolSidebar extends StatelessWidget {
   const ToolSidebar({super.key});
 
   @override
   Widget build(BuildContext context) {
     final editor = context.watch<EditorController>();
+    final highlighter = editor.activeTool == Tool.highlighter;
 
     return Container(
       width: 62,
@@ -21,6 +22,8 @@ class ToolSidebar extends StatelessWidget {
       child: Column(
         children: [
           _tool(editor, Tool.crayon, const Icon(Icons.edit), 'Pencil — free drawing'),
+          _tool(editor, Tool.highlighter, const Icon(Icons.border_color),
+              'Highlighter — mark a passage without hiding the notes'),
           _tool(editor, Tool.sharp, const _Glyph('♯'), 'Add a sharp'),
           _tool(editor, Tool.flat, const _Glyph('♭'), 'Add a flat'),
           _tool(editor, Tool.indication, const _Glyph('T', italic: true),
@@ -30,20 +33,29 @@ class ToolSidebar extends StatelessWidget {
           const SizedBox(height: 6),
           const Divider(height: 1, color: AppColors.surface0),
           const SizedBox(height: 6),
-          // Pencil color
+          // Pencil color, or highlighter color while it is the active tool.
           Tooltip(
-            message: 'Pencil color',
+            message: highlighter ? 'Highlighter color' : 'Pencil color',
             child: InkWell(
               borderRadius: BorderRadius.circular(11),
               onTap: () async {
-                final color = await pickColor(context, editor.crayonColor);
-                if (color != null) editor.setCrayonColor(color);
+                final color = highlighter
+                    ? await pickColor(context, editor.highlighterColor,
+                        title: 'Highlighter color',
+                        palette: highlighterPalette)
+                    : await pickColor(context, editor.crayonColor);
+                if (color == null) return;
+                highlighter
+                    ? editor.setHighlighterColor(color)
+                    : editor.setCrayonColor(color);
               },
               child: Container(
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: editor.crayonColor,
+                  color: highlighter
+                      ? editor.highlighterColor
+                      : editor.crayonColor,
                   borderRadius: BorderRadius.circular(11),
                 ),
               ),
@@ -106,21 +118,41 @@ class ToolSidebar extends StatelessWidget {
   /// symbols = scale). The unit and range depend on the active tool.
   static bool _sizableTool(Tool? tool) =>
       tool == Tool.crayon ||
+      tool == Tool.highlighter ||
       tool == Tool.sharp ||
       tool == Tool.flat ||
       tool == Tool.indication;
 
-  /// Single contextual slider: drives the pencil thickness or the symbol
-  /// scale depending on the active tool, each keeping its own value.
+  /// Single contextual slider: drives the pencil or highlighter thickness,
+  /// or the symbol scale, depending on the active tool, each keeping its
+  /// own value.
   Widget _sizeSlider(EditorController editor) {
-    final isCrayon = editor.activeTool == Tool.crayon;
-    final double min = isCrayon ? 1.0 : 0.4;
-    final double max = isCrayon ? 12.0 : 2.5;
-    final double value =
-        (isCrayon ? editor.crayonSize : editor.notationSize).clamp(min, max);
-    final String label = isCrayon
-        ? '${editor.crayonSize.round()} pt'
-        : '${(editor.notationSize * 100).round()} %';
+    final tool = editor.activeTool;
+    final (double min, double max, double current, String label,
+        void Function(double) onChanged) = switch (tool) {
+      Tool.crayon => (
+          1.0,
+          12.0,
+          editor.crayonSize,
+          '${editor.crayonSize.round()} pt',
+          editor.setCrayonSize,
+        ),
+      Tool.highlighter => (
+          6.0,
+          30.0,
+          editor.highlighterSize,
+          '${editor.highlighterSize.round()} pt',
+          editor.setHighlighterSize,
+        ),
+      _ => (
+          0.4,
+          2.5,
+          editor.notationSize,
+          '${(editor.notationSize * 100).round()} %',
+          editor.setNotationSize,
+        ),
+    };
+    final double value = current.clamp(min, max);
 
     return Column(
       children: [
@@ -146,9 +178,7 @@ class ToolSidebar extends StatelessWidget {
                 value: value,
                 min: min,
                 max: max,
-                onChanged: (v) => isCrayon
-                    ? editor.setCrayonSize(v)
-                    : editor.setNotationSize(v),
+                onChanged: onChanged,
               ),
             ),
           ),
