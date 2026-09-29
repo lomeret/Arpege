@@ -27,8 +27,8 @@ class _LibraryPanelState extends State<LibraryPanel> {
     final ok = await editor.openScoreId(scoreId);
     if (!ok && mounted) {
       final score = context.read<LibraryController>().getScore(scoreId);
-      await showInfo(context, 'Fichier introuvable',
-          'Le fichier n\'existe plus :\n${score?.path ?? ''}');
+      await showInfo(context, 'File not found',
+          'This file no longer exists:\n${score?.path ?? ''}');
     }
   }
 
@@ -47,10 +47,10 @@ class _LibraryPanelState extends State<LibraryPanel> {
     final score = library.getScore(scoreId);
     final ok = await confirm(
       context,
-      title: 'Retirer de la bibliothèque',
+      title: 'Remove from library',
       message:
-          'Retirer « ${score?.title ?? ''} » de la bibliothèque ?\n(Le fichier PDF et ses annotations ne sont pas supprimés.)',
-      okLabel: 'Retirer',
+          'Remove "${score?.title ?? ''}" from the library?\n(The PDF file and its annotations are not deleted.)',
+      okLabel: 'Remove',
     );
     if (ok) await library.removeScore(scoreId);
   }
@@ -67,7 +67,7 @@ class _LibraryPanelState extends State<LibraryPanel> {
           padding: const EdgeInsets.all(8),
           child: TextField(
             decoration: const InputDecoration(
-              hintText: 'Rechercher (titre, compositeur…)',
+              hintText: 'Search (title, composer…)',
               prefixIcon: Icon(Icons.search, size: 18),
               isDense: true,
             ),
@@ -77,7 +77,7 @@ class _LibraryPanelState extends State<LibraryPanel> {
         Expanded(
           child: scores.isEmpty
               ? const Center(
-                  child: Text('Bibliothèque vide',
+                  child: Text('Library is empty',
                       style: TextStyle(color: AppColors.subtext)))
               : ListView.builder(
                   itemCount: scores.length,
@@ -117,7 +117,7 @@ class _LibraryPanelState extends State<LibraryPanel> {
               Expanded(
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Ajouter…'),
+                  label: const Text('Add…'),
                   onPressed: () =>
                       pickAndOpenPdf(context, context.read<EditorController>()),
                 ),
@@ -145,15 +145,15 @@ class _LibraryPanelState extends State<LibraryPanel> {
         }
       },
       itemBuilder: (ctx) => [
-        const PopupMenuItem(value: 'open', child: Text('Ouvrir')),
-        const PopupMenuItem(value: 'meta', child: Text('Métadonnées…')),
+        const PopupMenuItem(value: 'open', child: Text('Open')),
+        const PopupMenuItem(value: 'meta', child: Text('Metadata…')),
         if (library.setlists.isNotEmpty) const PopupMenuDivider(),
         for (final sl in library.setlists)
           PopupMenuItem(
-              value: 'setlist:${sl.id}', child: Text('Ajouter à : ${sl.name}')),
+              value: 'setlist:${sl.id}', child: Text('Add to: ${sl.name}')),
         const PopupMenuDivider(),
         const PopupMenuItem(
-            value: 'remove', child: Text('Retirer de la bibliothèque')),
+            value: 'remove', child: Text('Remove from library')),
       ],
     );
   }

@@ -1,5 +1,5 @@
-/// Une partition référencée dans la bibliothèque, avec ses métadonnées.
-/// Schéma identique à l'ancien `library.py` (`_new_score`).
+/// A score referenced in the library, with its metadata.
+/// Same schema as the old `library.py` (`_new_score`).
 class Score {
   final String id;
   String path;
@@ -28,7 +28,7 @@ class Score {
     this.notes = '',
   });
 
-  /// Champs de métadonnées éditables (ordre d'affichage).
+  /// Editable metadata fields (display order).
   static const metadataFields = [
     'title',
     'composer',

@@ -1,5 +1,5 @@
 name: arpege
-description: "Arpège — éditeur de partitions PDF pour musiciens."
+description: "Arpège — PDF sheet music editor for musicians."
 publish_to: "none"
 version: 1.0.0+1
 
@@ -34,4 +34,4 @@ flutter_launcher_icons:
   windows:
     generate: true
     icon_size: 256
-  # Linux n'a pas d'icône embarquée standard : l'icône de fenêtre est gérée dans le runner.
+  # Linux has no standard embedded icon: the window icon is handled in the runner.

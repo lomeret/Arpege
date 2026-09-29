@@ -4,9 +4,10 @@ import 'dart:ui' show Offset, Rect;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import '../models/annotation_document.dart';
+import '../models/notation.dart';
 
-/// Fusionne les annotations dans une copie vectorielle du PDF source.
-/// Port de `features/pdf_export.py` (dièses/bémols/indications/tracés).
+/// Merges annotations into a vector copy of the source PDF.
+/// Port of `features/pdf_export.py` (sharps/flats/indications/strokes).
 class PdfExporter {
   static const String _defaultColor = '#e74c3c';
   static const String _indicationColor = '#27ae60';
@@ -40,10 +41,10 @@ class PdfExporter {
       PdfGraphics g, double x, double y, double size, PdfColor color) {
     final half = size / 2;
     final pen = PdfPen(color, width: 1.4);
-    // Hampe verticale.
+    // Vertical stem.
     g.drawLine(pen, Offset(x - half * 0.4, y - half),
         Offset(x - half * 0.4, y + half * 0.7));
-    // Panse arrondie pleine.
+    // Filled rounded bowl.
     g.drawEllipse(
       Rect.fromLTWH(x - half * 0.4, y, half * 1.0, half * 0.9),
       pen: pen,
@@ -51,7 +52,7 @@ class PdfExporter {
     );
   }
 
-  /// Écrit le PDF annoté dans [destPath].
+  /// Writes the annotated PDF to [destPath].
   static Future<void> export({
     required String sourcePdfPath,
     required String destPath,
@@ -70,7 +71,7 @@ class PdfExporter {
         final pageWidth = size.width;
         final pageHeight = size.height;
 
-        // Notations musicales.
+        // Musical notations.
         for (final n in doc.notationsForPage(i)) {
           final absX = n.relativeX * pageWidth;
           final absY = n.relativeY * pageHeight;
@@ -95,18 +96,37 @@ class PdfExporter {
           }
         }
 
-        // Tracés au crayon.
-        for (final path in doc.drawingsForPage(i)) {
+        // Freehand strokes: highlighter first, underneath, as on screen.
+        final strokes = doc.drawingsForPage(i).toList()
+          ..sort((a, b) =>
+              (a.isHighlighter ? 0 : 1).compareTo(b.isHighlighter ? 0 : 1));
+        for (final path in strokes) {
+          if (path.points.length < 2) continue;
           final rgb = _hexToColor(path.color);
-          final pen = PdfPen(rgb, width: path.size);
-          for (var k = 0; k < path.points.length - 1; k++) {
-            final p1 = path.points[k];
-            final p2 = path.points[k + 1];
-            g.drawLine(
-              pen,
-              Offset(p1.relativeX * pageWidth, p1.relativeY * pageHeight),
-              Offset(p2.relativeX * pageWidth, p2.relativeY * pageHeight),
-            );
+          final pen = PdfPen(rgb,
+              width: path.size,
+              lineCap: PdfLineCap.round,
+              lineJoin: PdfLineJoin.round);
+          final points = [
+            for (final p in path.points)
+              Offset(p.relativeX * pageWidth, p.relativeY * pageHeight),
+          ];
+          if (path.isHighlighter) {
+            // One path, not a line per segment: overlapping translucent
+            // segments would darken at every joint.
+            g.save();
+            g.setTransparency(DrawingPath.highlighterOpacity,
+                mode: PdfBlendMode.multiply);
+            final pdfPath = PdfPath();
+            for (var k = 0; k < points.length - 1; k++) {
+              pdfPath.addLine(points[k], points[k + 1]);
+            }
+            g.drawPath(pdfPath, pen: pen);
+            g.restore();
+          } else {
+            for (var k = 0; k < points.length - 1; k++) {
+              g.drawLine(pen, points[k], points[k + 1]);
+            }
           }
         }
       }

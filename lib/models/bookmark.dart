@@ -1,6 +1,6 @@
-/// Un signet dans une partition : un libellé pointant vers une page source.
-/// Chaque signet a un [id] unique, ce qui permet plusieurs signets sur une
-/// même page, chacun supprimable indépendamment.
+/// A bookmark within a score: a label pointing to a source page.
+/// Each bookmark has a unique [id], which allows several bookmarks on the
+/// same page, each removable independently.
 class Bookmark {
   final String id;
   String label;
@@ -14,7 +14,7 @@ class Bookmark {
       '${DateTime.now().microsecondsSinceEpoch}-${_counter++}';
 
   factory Bookmark.fromJson(Map<String, dynamic> j) => Bookmark(
-        id: j['id'] as String?, // ancien format sans id → généré au chargement
+        id: j['id'] as String?, // legacy format without an id -> generated on load
         label: (j['label'] as String?) ?? '',
         page: (j['page'] as num).toInt(),
       );

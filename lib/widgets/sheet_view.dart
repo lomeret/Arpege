@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/notation.dart';
+import '../services/logger.dart';
 import '../state/editor_controller.dart';
 import '../theme.dart';
 import 'annotation_painter.dart';
@@ -12,7 +14,7 @@ const double _kFitMargin = 40;
 const double _kZoomMin = 0.03;
 const double _kZoomMax = 6.0;
 
-/// Vue de la partition : zoom/pan (InteractiveViewer) + canvas d'annotations.
+/// Score view: zoom/pan (InteractiveViewer) + annotation canvas.
 class SheetView extends StatefulWidget {
   const SheetView({super.key});
 
@@ -28,9 +30,17 @@ class _SheetViewState extends State<SheetView> {
   Size _canvasSize = Size.zero;
   Size _viewport = Size.zero;
   String _key = '';
-  bool _building = false;
 
-  // Slot actif pendant un tracé/effacement.
+  /// Identifies the running rebuild. A newer one supersedes the older: the
+  /// previous guard simply dropped concurrent requests, which lost page
+  /// turns made while a page was still rendering.
+  int _generation = 0;
+
+  /// Document the current slots belong to, to know when their images are
+  /// about to be disposed by the renderer.
+  String? _slotsDocument;
+
+  // Active slot while drawing/erasing.
   PageSlot? _activeSlot;
 
   @override
@@ -60,38 +70,37 @@ class _SheetViewState extends State<SheetView> {
     if (key != _key) {
       _rebuildSlots(fit: true);
     } else if (mounted) {
-      setState(() {}); // simple repaint (annotations, outils…)
+      setState(() {}); // simple repaint (annotations, tools…)
     }
   }
 
   Future<void> _rebuildSlots({bool fit = false}) async {
-    if (_building) return;
-    _building = true;
+    final generation = ++_generation;
     _key = _computeKey();
 
-    if (!c.renderer.isOpen) {
-      setState(() {
-        _slots = [];
-        _canvasSize = Size.zero;
-      });
-      _building = false;
+    // The slots hold ui.Image handles owned by the renderer's cache. When
+    // the document changes, those images are disposed — let go of them now,
+    // synchronously, before the next frame can paint them.
+    if (c.currentPdfPath != _slotsDocument) {
+      _slotsDocument = c.currentPdfPath;
+      _clearSlots();
+    }
+
+    if (!c.renderer.isOpen || c.currentPdfPath == null) {
+      _clearSlots();
       return;
     }
 
     final seq = c.effectiveSequence;
     if (seq.isEmpty) {
-      setState(() {
-        _slots = [];
-        _canvasSize = Size.zero;
-      });
-      _building = false;
+      _clearSlots();
       return;
     }
 
     final pos = c.seqPos.clamp(0, seq.length - 1);
     final current = seq[pos];
 
-    // Spécifications de bandes : vue simple ou double (moitiés).
+    // Band specs: single view or spread (halves).
     final List<(int, double, double)> specs;
     if (c.spreadView && pos + 1 < seq.length) {
       specs = [
@@ -106,7 +115,15 @@ class _SheetViewState extends State<SheetView> {
     double yOffset = 0;
     double maxW = 0;
     for (final (page, y0, y1) in specs) {
-      final ui.Image image = await c.renderer.renderPage(page);
+      final ui.Image image;
+      try {
+        image = await c.renderer.renderPage(page);
+      } catch (e, st) {
+        logError('Could not render page ${page + 1}', e, st);
+        return;
+      }
+      // A newer rebuild (page turn, document change) has taken over.
+      if (generation != _generation || !mounted) return;
       final W = image.width.toDouble();
       final H = image.height.toDouble();
       final bandH = (y1 - y0) * H;
@@ -116,18 +133,27 @@ class _SheetViewState extends State<SheetView> {
       if (W > maxW) maxW = W;
     }
 
-    if (!mounted) {
-      _building = false;
-      return;
-    }
+    if (generation != _generation || !mounted) return;
     setState(() {
       _slots = slots;
       _canvasSize = Size(maxW, yOffset - _kSpreadGap);
     });
-    _building = false;
     if (fit) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
     }
+  }
+
+  void _clearSlots() {
+    if (_slots.isEmpty && _canvasSize.isEmpty) return;
+    if (!mounted) {
+      _slots = [];
+      _canvasSize = Size.zero;
+      return;
+    }
+    setState(() {
+      _slots = [];
+      _canvasSize = Size.zero;
+    });
   }
 
   // ---- Zoom / fit ----------------------------------------------------
@@ -163,7 +189,7 @@ class _SheetViewState extends State<SheetView> {
     c.viewTransform.value = s.multiplied(c.viewTransform.value);
   }
 
-  // ---- Conversion pointeur ------------------------------------------
+  // ---- Pointer conversion ------------------------------------------
 
   PageSlot? _slotAt(Offset canvasPos) {
     for (final slot in _slots) {
@@ -177,7 +203,7 @@ class _SheetViewState extends State<SheetView> {
         p.dy.clamp(slot.rect.top, slot.rect.bottom),
       );
 
-  // ---- Gestes : placement ponctuel ----------------------------------
+  // ---- Gestures: single-point placement ----------------------------
 
   Future<void> _onCanvasTap(TapUpDetails d) async {
     final slot = _slotAt(d.localPosition);
@@ -209,33 +235,38 @@ class _SheetViewState extends State<SheetView> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Indication musicale'),
+        title: const Text('Musical indication'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Texte de l\'indication'),
+          decoration: const InputDecoration(hintText: 'Indication text'),
           onSubmitted: (v) => Navigator.of(ctx).pop(v),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Annuler')),
+              child: const Text('Cancel')),
           ElevatedButton(
               onPressed: () => Navigator.of(ctx).pop(ctrl.text),
-              child: const Text('Ajouter')),
+              child: const Text('Add')),
         ],
       ),
     );
   }
 
-  // ---- Gestes : dessin / effacement au glisser ----------------------
+  // ---- Gestures: drag drawing / erasing ----------------------
+
+  static bool _drawing(Tool? tool) =>
+      tool == Tool.crayon || tool == Tool.highlighter;
+
+  static bool _dragTool(Tool? tool) => _drawing(tool) || tool == Tool.eraser;
 
   void _onPanStart(DragStartDetails d) {
     final slot = _slotAt(d.localPosition);
     if (slot == null) return;
     _activeSlot = slot;
     final rel = slot.canvasToRel(d.localPosition);
-    if (c.activeTool == Tool.crayon) {
+    if (_drawing(c.activeTool)) {
       c.beginStroke(slot.page, rel.dx, rel.dy);
     } else if (c.activeTool == Tool.eraser) {
       c.eraseAt(slot.page, rel.dx, rel.dy);
@@ -247,7 +278,7 @@ class _SheetViewState extends State<SheetView> {
     if (slot == null) return;
     final clamped = _clampToSlot(slot, d.localPosition);
     final rel = slot.canvasToRel(clamped);
-    if (c.activeTool == Tool.crayon) {
+    if (_drawing(c.activeTool)) {
       c.extendStroke(rel.dx, rel.dy);
     } else if (c.activeTool == Tool.eraser) {
       c.eraseAt(slot.page, rel.dx, rel.dy);
@@ -255,11 +286,17 @@ class _SheetViewState extends State<SheetView> {
   }
 
   void _onPanEnd(DragEndDetails d) {
-    if (c.activeTool == Tool.crayon) c.endStroke();
+    if (_drawing(c.activeTool)) c.endStroke();
     _activeSlot = null;
   }
 
-  // ---- Tap plein écran : tourner la page ----------------------------
+  (int, DrawingPath)? _activeStroke() {
+    final stroke = c.activeStroke;
+    final page = c.activeStrokePage;
+    return stroke == null || page == null ? null : (page, stroke);
+  }
+
+  // ---- Full-screen tap: turn the page ----------------------------
 
   void _onViewportTap(TapUpDetails d) {
     if (_viewport.isEmpty) return;
@@ -272,7 +309,7 @@ class _SheetViewState extends State<SheetView> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<EditorController>(); // rebuild sur changement d'outil, etc.
+    context.watch<EditorController>(); // rebuild on tool change, etc.
     final tool = c.activeTool;
     final hasContent = _slots.isNotEmpty;
 
@@ -280,7 +317,9 @@ class _SheetViewState extends State<SheetView> {
       builder: (context, constraints) {
         _viewport = Size(constraints.maxWidth, constraints.maxHeight);
 
-        if (!c.renderer.isOpen) return const _Placeholder();
+        if (!c.renderer.isOpen || c.currentPdfPath == null) {
+          return const _Placeholder();
+        }
         if (!hasContent) {
           return const Center(
             child: CircularProgressIndicator(color: AppColors.blue),
@@ -293,22 +332,16 @@ class _SheetViewState extends State<SheetView> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapUp: tool != null ? _onCanvasTap : null,
-            onPanStart:
-                (tool == Tool.crayon || tool == Tool.eraser) ? _onPanStart : null,
-            onPanUpdate:
-                (tool == Tool.crayon || tool == Tool.eraser) ? _onPanUpdate : null,
-            onPanEnd:
-                (tool == Tool.crayon || tool == Tool.eraser) ? _onPanEnd : null,
+            onPanStart: _dragTool(tool) ? _onPanStart : null,
+            onPanUpdate: _dragTool(tool) ? _onPanUpdate : null,
+            onPanEnd: _dragTool(tool) ? _onPanEnd : null,
             child: CustomPaint(
               size: _canvasSize,
               painter: AnnotationPainter(
                 slots: _slots,
                 notations: c.doc.notations,
                 drawings: c.doc.drawings,
-                activeStrokePoints: c.activeStrokePoints,
-                activeStrokePage: c.activeStrokePage,
-                crayonColor: c.crayonColor,
-                crayonSize: c.crayonSize,
+                activeStroke: _activeStroke,
                 showLabels: _slots.length > 1,
                 repaint: c.strokeTick,
               ),
@@ -353,7 +386,7 @@ class _Placeholder extends StatelessWidget {
             Image.asset('assets/Logo.png', width: 160, height: 160),
             const SizedBox(height: 24),
             const Text(
-              'Aucune partition ouverte — Ctrl+O pour ouvrir un PDF',
+              'No score open — Ctrl+O to open a PDF',
               style: TextStyle(color: AppColors.subtext, fontSize: 15),
             ),
           ],

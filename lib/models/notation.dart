@@ -1,4 +1,4 @@
-/// Un point d'un tracé au crayon, en coordonnées relatives (0–1) à la page.
+/// A point of a pencil stroke, in coordinates relative (0-1) to the page.
 class StrokePoint {
   double relativeX;
   double relativeY;
@@ -18,8 +18,8 @@ class StrokePoint {
   StrokePoint copy() => StrokePoint(relativeX, relativeY);
 }
 
-/// Une notation musicale ponctuelle : dièse, bémol ou indication texte.
-/// Coordonnées relatives (0–1) à la page, comme dans l'ancien `music_notation.py`.
+/// A single-point musical notation: sharp, flat, or text indication.
+/// Coordinates relative (0-1) to the page, like the old `music_notation.py`.
 class Notation {
   String type; // 'sharp' | 'flat' | 'indication'
   int page;
@@ -27,8 +27,8 @@ class Notation {
   double relativeY;
   String? text;
 
-  /// Facteur d'échelle du symbole (1.0 = taille par défaut). Réglable par
-  /// l'utilisateur pour s'adapter à la taille des portées de chaque partition.
+  /// Scale factor of the symbol (1.0 = default size). Adjustable by the
+  /// user to match the staff size of each score.
   double size;
 
   Notation({
@@ -78,18 +78,34 @@ class Notation {
       );
 }
 
-/// Un tracé au crayon : suite de points + couleur + épaisseur (en points PDF).
+/// A freehand stroke: a sequence of points + color + width (in PDF points).
+/// Drawn either with the pencil or with the highlighter, which is wide,
+/// translucent and multiplied onto the page so the notes stay readable.
 class DrawingPath {
+  static const pencil = 'pencil';
+  static const highlighter = 'highlighter';
+
+  /// Opacity of highlighter strokes, on screen and in the exported PDF.
+  static const highlighterOpacity = 0.4;
+
   List<StrokePoint> points;
   String color; // '#rrggbb'
   double size;
+  String tool; // [pencil] | [highlighter]
 
-  DrawingPath({required this.points, this.color = '#000000', this.size = 3});
+  DrawingPath({
+    required this.points,
+    this.color = '#000000',
+    this.size = 3,
+    this.tool = pencil,
+  });
 
-  /// Gère l'ancien format (liste simple de points) et le nouveau (dict).
+  bool get isHighlighter => tool == highlighter;
+
+  /// Handles both the old format (a plain point list) and the new one (a dict).
   factory DrawingPath.fromJson(dynamic data) {
     if (data is List) {
-      // Ancien format : liste brute de points.
+      // Legacy format: a plain list of points.
       return DrawingPath(
         points: data
             .map((p) => StrokePoint.fromJson(Map<String, dynamic>.from(p as Map)))
@@ -106,6 +122,7 @@ class DrawingPath {
           .toList(),
       color: (map['color'] as String?) ?? '#000000',
       size: (map['size'] as num?)?.toDouble() ?? 3,
+      tool: (map['tool'] as String?) ?? pencil,
     );
   }
 
@@ -113,11 +130,13 @@ class DrawingPath {
         'points': points.map((p) => p.toJson()).toList(),
         'color': color,
         'size': size,
+        'tool': tool,
       };
 
   DrawingPath copy() => DrawingPath(
         points: points.map((p) => p.copy()).toList(),
         color: color,
         size: size,
+        tool: tool,
       );
 }

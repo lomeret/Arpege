@@ -15,8 +15,8 @@ class SetlistsPanel extends StatelessWidget {
     final ok = await editor.openScoreId(scoreId);
     if (!ok && context.mounted) {
       final score = context.read<LibraryController>().getScore(scoreId);
-      await showInfo(context, 'Fichier introuvable',
-          'Le fichier n\'existe plus :\n${score?.path ?? ''}');
+      await showInfo(context, 'File not found',
+          'This file no longer exists:\n${score?.path ?? ''}');
     }
   }
 
@@ -51,8 +51,8 @@ class SetlistsPanel extends StatelessWidget {
                   onSelected: (v) async {
                     if (v == 'rename') {
                       final name = await promptText(context,
-                          title: 'Renommer la setlist',
-                          label: 'Nom',
+                          title: 'Rename setlist',
+                          label: 'Name',
                           initial: sl.name);
                       if (name != null && name.trim().isNotEmpty) {
                         await library.renameSetlist(sl.id, name.trim());
@@ -65,8 +65,8 @@ class SetlistsPanel extends StatelessWidget {
                     }
                   },
                   itemBuilder: (ctx) => const [
-                    PopupMenuItem(value: 'rename', child: Text('Renommer…')),
-                    PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+                    PopupMenuItem(value: 'rename', child: Text('Rename…')),
+                    PopupMenuItem(value: 'delete', child: Text('Delete')),
                   ],
                 ),
               );
@@ -77,10 +77,10 @@ class SetlistsPanel extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           child: ElevatedButton.icon(
             icon: const Icon(Icons.playlist_add, size: 18),
-            label: const Text('Nouvelle setlist'),
+            label: const Text('New setlist'),
             onPressed: () async {
               final name = await promptText(context,
-                  title: 'Nouvelle setlist', label: 'Nom de la setlist');
+                  title: 'New setlist', label: 'Setlist name');
               if (name != null && name.trim().isNotEmpty) {
                 final sl = await library.addSetlist(name.trim());
                 editor.selectSetlist(sl.id);
@@ -91,12 +91,12 @@ class SetlistsPanel extends StatelessWidget {
         const Divider(height: 1),
         const Padding(
           padding: EdgeInsets.fromLTRB(10, 8, 10, 2),
-          child: Text('Morceaux', style: TextStyle(color: AppColors.subtext)),
+          child: Text('Songs', style: TextStyle(color: AppColors.subtext)),
         ),
         Expanded(
           child: activeId == null
               ? const Center(
-                  child: Text('Sélectionnez une setlist',
+                  child: Text('Select a setlist',
                       style: TextStyle(color: AppColors.subtext)))
               : ListView.builder(
                   itemCount: songs.length,
@@ -131,12 +131,12 @@ class SetlistsPanel extends StatelessWidget {
                           }
                         },
                         itemBuilder: (ctx) => const [
-                          PopupMenuItem(value: 'up', child: Text('Monter')),
-                          PopupMenuItem(value: 'down', child: Text('Descendre')),
+                          PopupMenuItem(value: 'up', child: Text('Move up')),
+                          PopupMenuItem(value: 'down', child: Text('Move down')),
                           PopupMenuDivider(),
                           PopupMenuItem(
                               value: 'remove',
-                              child: Text('Retirer de la setlist')),
+                              child: Text('Remove from setlist')),
                         ],
                       ),
                     );

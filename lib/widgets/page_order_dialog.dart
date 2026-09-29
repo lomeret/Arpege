@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// Réordonner / masquer / dupliquer les pages (port de `PageOrderDialog`).
-/// N'affecte jamais le PDF d'origine : renvoie une séquence d'indices source.
+/// Reorder / hide / duplicate pages (port of `PageOrderDialog`).
+/// Never affects the original PDF: returns a sequence of source indices.
 Future<List<int>?> showPageOrderDialog(
   BuildContext context, {
   required int pageCount,
@@ -43,14 +43,14 @@ class _PageOrderDialogState extends State<_PageOrderDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Gérer les pages'),
+      title: const Text('Manage pages'),
       content: SizedBox(
         width: 360,
         height: 520,
         child: Column(
           children: [
             const Text(
-              'Glissez pour réordonner. La séquence n\'altère pas le PDF d\'origine.',
+              'Drag to reorder. This sequence never alters the original PDF.',
               style: TextStyle(color: AppColors.subtext),
             ),
             const SizedBox(height: 8),
@@ -88,13 +88,13 @@ class _PageOrderDialogState extends State<_PageOrderDialog> {
                         children: [
                           IconButton(
                             icon: const Icon(Icons.copy, size: 18),
-                            tooltip: 'Dupliquer',
+                            tooltip: 'Duplicate',
                             onPressed: () =>
                                 setState(() => _seq.insert(i + 1, src)),
                           ),
                           IconButton(
                             icon: const Icon(Icons.visibility_off, size: 18),
-                            tooltip: 'Masquer',
+                            tooltip: 'Hide',
                             onPressed: () => setState(() => _seq.removeAt(i)),
                           ),
                         ],
@@ -111,11 +111,11 @@ class _PageOrderDialogState extends State<_PageOrderDialog> {
         TextButton(
           onPressed: () => setState(
               () => _seq = List.generate(widget.pageCount, (i) => i)),
-          child: const Text('Réinitialiser'),
+          child: const Text('Reset'),
         ),
         TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Annuler')),
+            child: const Text('Cancel')),
         ElevatedButton(
             onPressed: () => Navigator.of(context).pop(_seq),
             child: const Text('OK')),

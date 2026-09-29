@@ -1,24 +1,27 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' show Color;
+import 'dart:ui' show AppExitResponse, Color;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show TransformationController, VoidCallback;
+import 'package:flutter/widgets.dart'
+    show AppLifecycleListener, TransformationController, VoidCallback;
 
 import '../models/annotation_document.dart';
 import '../models/bookmark.dart';
 import '../models/notation.dart';
 import '../pdf/pdf_renderer.dart';
-import '../services/annotation_store.dart';
+import '../services/annotation_repository.dart';
+import '../services/json_file.dart';
+import '../services/logger.dart';
 import '../services/pdf_export.dart';
-import '../services/recent_files.dart';
+import '../services/recent_files_repository.dart';
 import '../theme.dart';
 import 'history.dart';
 import 'library_controller.dart';
 
-enum Tool { crayon, sharp, flat, indication, eraser }
+enum Tool { crayon, highlighter, sharp, flat, indication, eraser }
 
-/// Tolérance de clic de la gomme, en coordonnées relatives.
+/// Eraser click tolerance, in relative coordinates.
 const double kEraserTolerance = 0.03;
 
 String _colorToHex(Color c) =>
@@ -30,21 +33,51 @@ Color _hexToColor(String hex) {
   return Color(0xFF000000 | int.parse(h, radix: 16));
 }
 
-/// État d'édition d'une partition + orchestration (port de `ArpegeWindow`).
+/// Editing state for a score + orchestration.
+///
+/// Owns the annotation document *and its lifecycle*: every mutation bumps a
+/// revision counter, and the document is never replaced or abandoned without
+/// pending changes being flushed to disk first (see [flushPendingChanges]).
 class EditorController extends ChangeNotifier {
-  EditorController(this.library);
+  EditorController(
+    this.library, {
+    AnnotationRepository? annotations,
+    RecentFilesRepository? recentFiles,
+    PdfRenderer? renderer,
+    bool observeLifecycle = true,
+  })  : _annotations = annotations ?? FileAnnotationRepository(),
+        recentFiles = recentFiles ?? FileRecentFilesRepository(),
+        renderer = renderer ?? PdfRenderer() {
+    if (observeLifecycle) {
+      // The app can be killed in the background (Android) or closed by the
+      // window manager (desktop) at any moment: persist before that happens.
+      _lifecycle = AppLifecycleListener(
+        onHide: _flushQuietly,
+        onPause: _flushQuietly,
+        onDetach: _flushQuietly,
+        onExitRequested: _onExitRequested,
+      );
+    }
+  }
 
   final LibraryController library;
-  final PdfRenderer renderer = PdfRenderer();
+  final AnnotationRepository _annotations;
+
+  /// Exposed so the "recent files" dialog reads the same source as the
+  /// controller writes, rather than reaching for a global.
+  final RecentFilesRepository recentFiles;
+  AppLifecycleListener? _lifecycle;
+
+  final PdfRenderer renderer;
   final HistoryManager history = HistoryManager();
 
-  /// Transform partagé avec la vue pour le zoom/pan (lu par le « zoom chip »).
+  /// Shared with the view for zoom/pan (read by the "zoom chip").
   final TransformationController viewTransform = TransformationController();
 
-  /// Se redessine à chaque point ajouté au tracé en cours (évite un rebuild global).
+  /// Repaints on every point added to the current stroke (avoids a full rebuild).
   final ValueNotifier<int> strokeTick = ValueNotifier<int>(0);
 
-  // Rappels enregistrés par la vue (ont besoin de la taille du viewport).
+  // Callbacks registered by the view (need the viewport size).
   VoidCallback? fitViewCallback;
   void Function(double factor)? zoomByCallback;
 
@@ -60,25 +93,96 @@ class EditorController extends ChangeNotifier {
   Tool? activeTool;
   String _crayonColorHex = _colorToHex(AppColors.defaultCrayon);
 
-  /// Épaisseur du trait de crayon, en points PDF.
+  /// Pencil stroke width, in PDF points.
   double crayonSize = 4;
 
-  /// Échelle appliquée aux prochains dièses/bémols/indications posés.
+  String _highlighterColorHex = _colorToHex(AppColors.defaultHighlighter);
+
+  /// Highlighter stroke width, in PDF points.
+  double highlighterSize = 14;
+
+  /// Scale applied to the next sharps/flats/indications placed.
   double notationSize = 1.0;
 
   bool spreadView = false;
 
-  // Tracé au crayon en cours (rendu par la vue, validé à la fin).
-  List<StrokePoint>? activeStrokePoints;
+  /// Stage mode: every menu, toolbar and panel is hidden and the editing
+  /// tools are locked, so a stray touch can only turn the page.
+  bool performanceMode = false;
+
+  // Stroke in progress (rendered by the view, committed at the end).
+  // Not announced through notifyListeners — that would rebuild the whole
+  // window at every pointer move — but through [strokeTick]: the painter
+  // must therefore read it from here at paint time, never keep a copy.
+  DrawingPath? activeStroke;
   int? activeStrokePage;
 
+  List<StrokePoint>? get activeStrokePoints => activeStroke?.points;
+
   String get statusHint => _statusHint;
-  String _statusHint = 'Ouvrez une partition pour commencer  •  Ctrl+O';
+  String _statusHint = 'Open a score to get started  •  Ctrl+O';
+
+  /// Last storage failure, for the UI to show. Cleared by [clearError].
+  String? get lastError => _lastError;
+  String? _lastError;
+
+  void clearError() {
+    if (_lastError == null) return;
+    _lastError = null;
+    notifyListeners();
+  }
+
+  void _reportError(String message, Object error) {
+    logError(message, error);
+    _lastError =
+        error is StorageException ? '$message: ${error.message}' : message;
+  }
 
   Color get crayonColor => _hexToColor(_crayonColorHex);
   String get crayonColorHex => _crayonColorHex;
+  Color get highlighterColor => _hexToColor(_highlighterColorHex);
 
-  // ---- Séquence de pages --------------------------------------------
+  // ---- Unsaved-changes tracking -----------------------------------------
+
+  /// Incremented by every change to [doc]; compared with the revision that
+  /// was last written to disk. A counter rather than a boolean so a mutation
+  /// happening *during* a save is not mistaken for saved content.
+  int _revision = 0;
+  int _savedRevision = 0;
+
+  bool get hasUnsavedChanges =>
+      currentPdfPath != null && _revision != _savedRevision;
+
+  void _markDirty() => _revision++;
+
+  void _markClean() => _savedRevision = _revision;
+
+  /// Writes pending annotations, if any. Never throws: it runs on paths
+  /// (app going to background, score switch) where there is nobody to tell.
+  Future<void> flushPendingChanges() async {
+    if (!hasUnsavedChanges) return;
+    try {
+      await saveAnnotations(silent: true);
+    } catch (e, st) {
+      // Callers are shutdown paths and score switches: there is nobody to
+      // hand an exception to, and swallowing it here is the only place where
+      // that is the right answer — the document stays marked dirty.
+      logError('Could not flush pending annotations', e, st);
+    }
+  }
+
+  void _flushQuietly() {
+    // Fire and forget: the lifecycle callbacks are synchronous, and the
+    // platform gives no guarantee about how long it will wait anyway.
+    flushPendingChanges();
+  }
+
+  Future<AppExitResponse> _onExitRequested() async {
+    await flushPendingChanges();
+    return AppExitResponse.exit;
+  }
+
+  // ---- Page sequence ---------------------------------------------------
 
   List<int> get effectiveSequence {
     if (doc.pageSequence != null) return doc.pageSequence!;
@@ -104,21 +208,54 @@ class EditorController extends ChangeNotifier {
     return '${seqPos + 1} / $total';
   }
 
-  // ---- Ouverture / chargement ---------------------------------------
+  // ---- Opening / loading -------------------------------------------------
 
   Future<void> openPdf(String path) async {
-    history.clear();
-    doc = AnnotationDocument();
-    seqPos = 0;
+    // Never drop the current score's annotations on the floor.
+    await flushPendingChanges();
+
+    // Announce the empty state *before* the renderer disposes its cached
+    // bitmaps: the view holds ui.Image handles, and painting a disposed
+    // image throws. Listeners run synchronously, so the view has dropped
+    // them by the time the next frame is drawn.
+    _resetDocument();
+    currentPdfPath = null;
+    currentScoreId = null;
+    notifyListeners();
+
+    try {
+      await renderer.open(path);
+    } catch (e, st) {
+      // The previous document is already closed at this point: leave the
+      // editor empty rather than pointing at a score it can no longer render.
+      logError('Could not open $path', e, st);
+      _statusHint = 'Open a score to get started  •  Ctrl+O';
+      notifyListeners();
+      rethrow;
+    }
+
     currentPdfPath = path;
 
-    await renderer.open(path);
-    final loaded = await AnnotationStore.load(path);
-    if (loaded != null) doc = loaded;
+    try {
+      final stored = await _annotations.load(path);
+      if (stored != null) {
+        doc = stored.doc;
+        _createdIso = stored.createdIso;
+      }
+    } catch (e, st) {
+      // A copy of an unreadable file was kept aside by the repository; start
+      // from a blank document rather than refusing to open the score.
+      logError('Could not load annotations for $path', e, st);
+      _reportError('Annotations could not be loaded, a copy was kept aside', e);
+    }
     if (doc.notations.isNotEmpty) notationSize = doc.notations.last.size;
-    _createdIso = await AnnotationStore.existingCreatedDate(path);
+    _markClean();
 
-    await RecentFiles.add(path);
+    try {
+      await recentFiles.add(path);
+    } catch (e, st) {
+      logError('Could not update the recent files list', e, st);
+    }
     final score = await library.addOrTouch(path);
     currentScoreId = score.id;
 
@@ -127,7 +264,16 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Ouvre une partition de la bibliothèque ; renvoie `false` si le fichier manque.
+  void _resetDocument() {
+    history.clear();
+    doc = AnnotationDocument();
+    _createdIso = null;
+    seqPos = 0;
+    _revision = 0;
+    _savedRevision = 0;
+  }
+
+  /// Opens a score from the library; returns `false` if the file is missing.
   Future<bool> openScoreId(String scoreId) async {
     final score = library.getScore(scoreId);
     if (score == null) return true;
@@ -136,17 +282,20 @@ class EditorController extends ChangeNotifier {
     return true;
   }
 
-  // ---- Outils --------------------------------------------------------
+  // ---- Tools --------------------------------------------------------
 
   void setTool(Tool? tool) {
+    if (performanceMode && tool != null) return;
     activeTool = tool;
     _statusHint = switch (tool) {
-      null => 'Aucun outil  •  glisser pour déplacer la vue',
-      Tool.crayon => 'Crayon  •  dessinez directement sur la partition',
-      Tool.sharp => 'Dièse  •  touchez à l\'endroit voulu',
-      Tool.flat => 'Bémol  •  touchez à l\'endroit voulu',
-      Tool.indication => 'Indication  •  touchez puis saisissez le texte',
-      Tool.eraser => 'Gomme  •  touchez un élément pour le supprimer',
+      null => 'No tool selected  •  drag to pan the view',
+      Tool.crayon => 'Pencil  •  draw directly on the score',
+      Tool.highlighter =>
+        'Highlighter  •  mark passages, the notes stay visible',
+      Tool.sharp => 'Sharp  •  tap where you want to place it',
+      Tool.flat => 'Flat  •  tap where you want to place it',
+      Tool.indication => 'Indication  •  tap then type the text',
+      Tool.eraser => 'Eraser  •  tap an element to remove it',
     };
     notifyListeners();
   }
@@ -161,20 +310,34 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setHighlighterColor(Color color) {
+    _highlighterColorHex = _colorToHex(color);
+    notifyListeners();
+  }
+
+  void setHighlighterSize(double size) {
+    highlighterSize = size;
+    notifyListeners();
+  }
+
   void setNotationSize(double size) {
     notationSize = size;
     notifyListeners();
   }
 
-  // ---- Historique ----------------------------------------------------
+  // ---- History ----------------------------------------------------
 
-  void _pushHistory() => history.push(doc.snapshot());
+  void _pushHistory() {
+    history.push(doc.snapshot());
+    _markDirty();
+  }
 
   void undo() {
     if (!history.canUndo) return;
     final state = history.undo(doc.snapshot());
     if (state != null) {
       doc.restore(state);
+      _markDirty();
       notifyListeners();
     }
   }
@@ -184,11 +347,12 @@ class EditorController extends ChangeNotifier {
     final state = history.redo(doc.snapshot());
     if (state != null) {
       doc.restore(state);
+      _markDirty();
       notifyListeners();
     }
   }
 
-  // ---- Annotations : pose --------------------------------------------
+  // ---- Annotations: placement --------------------------------------------
 
   void placeSharp(int page, double relX, double relY) {
     _pushHistory();
@@ -225,29 +389,34 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Tracé au crayon
+  // Freehand stroke (pencil or highlighter, depending on the active tool).
   void beginStroke(int page, double relX, double relY) {
+    final highlighter = activeTool == Tool.highlighter;
     activeStrokePage = page;
-    activeStrokePoints = [StrokePoint(relX, relY)];
+    activeStroke = DrawingPath(
+      points: [StrokePoint(relX, relY)],
+      color: highlighter ? _highlighterColorHex : _crayonColorHex,
+      size: highlighter ? highlighterSize : crayonSize,
+      tool: highlighter ? DrawingPath.highlighter : DrawingPath.pencil,
+    );
     strokeTick.value++;
   }
 
   void extendStroke(double relX, double relY) {
-    if (activeStrokePoints == null) return;
-    activeStrokePoints!.add(StrokePoint(relX, relY));
+    final stroke = activeStroke;
+    if (stroke == null) return;
+    stroke.points.add(StrokePoint(relX, relY));
     strokeTick.value++;
   }
 
   void endStroke() {
-    final points = activeStrokePoints;
+    final stroke = activeStroke;
     final page = activeStrokePage;
-    activeStrokePoints = null;
+    activeStroke = null;
     activeStrokePage = null;
-    if (points != null && page != null && points.length > 1) {
+    if (stroke != null && page != null && stroke.points.length > 1) {
       _pushHistory();
-      doc.drawings
-          .putIfAbsent(page, () => [])
-          .add(DrawingPath(points: points, color: _crayonColorHex, size: crayonSize));
+      doc.drawings.putIfAbsent(page, () => []).add(stroke);
       notifyListeners();
     } else {
       strokeTick.value++;
@@ -328,11 +497,27 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setPerformanceMode(bool enabled) {
+    if (enabled == performanceMode) return;
+    // Nothing to perform without a score.
+    if (enabled && currentPdfPath == null) return;
+    if (enabled) {
+      // Drop the tool first: in performance mode a tap must turn the page.
+      endStroke();
+      setTool(null);
+    }
+    performanceMode = enabled;
+    _statusHint = enabled
+        ? 'Performance mode  •  tap left/right to turn the page  •  Esc to exit'
+        : 'No tool selected  •  drag to pan the view';
+    notifyListeners();
+  }
+
   void fitView() => fitViewCallback?.call();
   void zoomIn() => zoomByCallback?.call(1.15);
   void zoomOut() => zoomByCallback?.call(1 / 1.15);
 
-  // ---- Gestion des pages ---------------------------------------------
+  // ---- Page management ---------------------------------------------
 
   List<int> get defaultSequence =>
       renderer.isOpen ? List.generate(renderer.pageCount, (i) => i) : [];
@@ -348,10 +533,11 @@ class EditorController extends ChangeNotifier {
     } else {
       seqPos = 0;
     }
+    _markDirty();
     notifyListeners();
   }
 
-  // ---- Signets -------------------------------------------------------
+  // ---- Bookmarks -------------------------------------------------------
 
   void addBookmark(String label) {
     if (currentPdfPath == null) return;
@@ -359,12 +545,14 @@ class EditorController extends ChangeNotifier {
     doc.bookmarks.add(Bookmark(
         label: label.trim().isEmpty ? 'Page ${page + 1}' : label.trim(),
         page: page));
+    _markDirty();
     saveAnnotations(silent: true);
     notifyListeners();
   }
 
   void removeBookmark(String id) {
     doc.bookmarks.removeWhere((b) => b.id == id);
+    _markDirty();
     saveAnnotations(silent: true);
     notifyListeners();
   }
@@ -388,29 +576,55 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- Sauvegarde / export -------------------------------------------
+  // ---- Save / export -------------------------------------------
 
-  Future<String?> saveAnnotations({bool silent = false}) async {
-    if (currentPdfPath == null) return null;
-    final path = await AnnotationStore.save(
-      pdfPath: currentPdfPath!,
-      doc: doc,
-      totalPages: renderer.pageCount,
-      createdIso: _createdIso,
-    );
-    _createdIso ??= DateTime.now().toIso8601String();
-    if (!silent) {
-      _statusHint = 'Annotations sauvegardées  •  $path';
+  /// Serializes saves: bookmarks, the save button and the lifecycle hooks can
+  /// all fire at once, and two concurrent writes to the same file would race.
+  Future<void> _saveQueue = Future<void>.value();
+
+  Future<String?> saveAnnotations({bool silent = false}) {
+    final result = _saveQueue.then((_) => _writeAnnotations(silent: silent));
+    _saveQueue = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<String?> _writeAnnotations({required bool silent}) async {
+    final path = currentPdfPath;
+    if (path == null) return null;
+    // Captured before the write: a change made while it runs must keep the
+    // document marked as dirty.
+    final revision = _revision;
+    try {
+      final saved = await _annotations.save(
+        pdfPath: path,
+        doc: doc,
+        totalPages: renderer.pageCount,
+        createdIso: _createdIso,
+      );
+      _createdIso ??= DateTime.now().toIso8601String();
+      _savedRevision = revision;
+      if (!silent) _statusHint = 'Annotations saved  •  $saved';
       notifyListeners();
+      return saved;
+    } catch (e, st) {
+      // Including failures from outside the repository (resolving the
+      // storage directory, for instance): the save button must report them,
+      // never throw out of a fire-and-forget call.
+      logError('Annotations could not be saved', e, st);
+      _reportError('Annotations could not be saved', e);
+      notifyListeners();
+      return null;
     }
-    return path;
   }
 
   Future<void> loadAnnotationsFromPath(String jsonPath) async {
+    // Importing replaces the whole document: save what is there first.
+    await flushPendingChanges();
+    final loaded = await _annotations.import(jsonPath);
     _pushHistory();
-    final loaded = await AnnotationStore.loadFromPath(jsonPath);
     doc = loaded;
     seqPos = 0;
+    _markDirty();
     notifyListeners();
   }
 
@@ -421,12 +635,13 @@ class EditorController extends ChangeNotifier {
       destPath: destPath,
       doc: doc,
     );
-    _statusHint = 'PDF annoté exporté  •  $destPath';
+    _statusHint = 'Annotated PDF exported  •  $destPath';
     notifyListeners();
   }
 
   @override
   void dispose() {
+    _lifecycle?.dispose();
     renderer.close();
     viewTransform.dispose();
     strokeTick.dispose();

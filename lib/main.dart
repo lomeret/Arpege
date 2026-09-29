@@ -4,7 +4,10 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
 import 'app_actions.dart';
-import 'services/recent_files.dart';
+import 'services/annotation_repository.dart';
+import 'services/library_repository.dart';
+import 'services/paths.dart';
+import 'services/recent_files_repository.dart';
 import 'state/editor_controller.dart';
 import 'state/library_controller.dart';
 import 'theme.dart';
@@ -18,9 +21,9 @@ import 'widgets/tool_sidebar.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Android : dessine sous les barres système (edge-to-edge) et rend-les
-  // transparentes avec des icônes claires, pour éviter les bandeaux blancs
-  // Xiaomi qui recouvrent la toolbar et la barre de statut.
+  // Android: draw under the system bars (edge-to-edge) and make them
+  // transparent with light icons, to avoid the white Xiaomi bands that
+  // cover the toolbar and status bar.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -29,17 +32,39 @@ Future<void> main() async {
     systemNavigationBarColor: Colors.transparent,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
-  pdfrxFlutterInitialize(); // requis par pdfrx 2.x avant toute utilisation
-  final library = LibraryController();
+  pdfrxFlutterInitialize(); // required by pdfrx 2.x before any use
+
+  // Storage is wired here and nowhere else: the controllers only ever see
+  // the repository interfaces, which is what makes them testable.
+  final locations = AppPaths();
+  final recentFiles = FileRecentFilesRepository(locations: locations);
+  final annotations = FileAnnotationRepository(locations: locations);
+  final library = LibraryController(
+    repository: FileLibraryRepository(locations: locations),
+    recentFiles: recentFiles,
+  );
   await library.load();
-  // Migration : importe les anciens fichiers récents dans la bibliothèque.
-  await library.importPaths(await RecentFiles.load());
-  runApp(ArpegeApp(library: library));
+  // Migration: import the old recent files into the library.
+  await library.importRecentFiles();
+
+  runApp(ArpegeApp(
+    library: library,
+    annotations: annotations,
+    recentFiles: recentFiles,
+  ));
 }
 
 class ArpegeApp extends StatelessWidget {
   final LibraryController library;
-  const ArpegeApp({super.key, required this.library});
+  final AnnotationRepository annotations;
+  final RecentFilesRepository recentFiles;
+
+  const ArpegeApp({
+    super.key,
+    required this.library,
+    required this.annotations,
+    required this.recentFiles,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +72,11 @@ class ArpegeApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<LibraryController>.value(value: library),
         ChangeNotifierProvider<EditorController>(
-          create: (_) => EditorController(library),
+          create: (_) => EditorController(
+            library,
+            annotations: annotations,
+            recentFiles: recentFiles,
+          ),
         ),
       ],
       child: MaterialApp(
@@ -70,8 +99,83 @@ class ArpegeHome extends StatefulWidget {
 class _ArpegeHomeState extends State<ArpegeHome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  /// Panneaux de droite (Bibliothèque / Signets / Setlists) en mode large.
-  /// En mode étroit ils vivent dans l'endDrawer, qui a sa propre fermeture.
+  /// Receives the keyboard shortcuts. Refocused when entering or leaving
+  /// performance mode: the widget holding the focus may just have been
+  /// removed, and the page-turn pedals would then go unheard.
+  final _shortcutsFocus = FocusNode(debugLabel: 'shortcuts');
+
+  /// Performance mode last applied to the system bars.
+  bool _immersive = false;
+
+  LibraryController? _library;
+  EditorController? _editor;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_library != null) return;
+    // Storage failures used to be swallowed; they are now reported by the
+    // controllers and shown here, once each.
+    _library = context.read<LibraryController>()..addListener(_showErrors);
+    _editor = context.read<EditorController>()
+      ..addListener(_showErrors)
+      ..addListener(_syncPerformanceMode);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showErrors());
+  }
+
+  @override
+  void dispose() {
+    _library?.removeListener(_showErrors);
+    _editor?.removeListener(_showErrors);
+    _editor?.removeListener(_syncPerformanceMode);
+    _shortcutsFocus.dispose();
+    super.dispose();
+  }
+
+  void _showErrors() {
+    if (!mounted) return;
+    final library = _library;
+    if (library != null && library.lastError != null) {
+      final message = library.lastError!;
+      library.clearError();
+      _showError(message);
+    }
+    final editor = _editor;
+    if (editor != null && editor.lastError != null) {
+      final message = editor.lastError!;
+      editor.clearError();
+      _showError(message);
+    }
+  }
+
+  /// Hides the Android status and navigation bars in performance mode (a
+  /// swipe from the edge shows them briefly). No effect on desktop.
+  void _syncPerformanceMode() {
+    final editor = _editor;
+    if (editor == null || editor.performanceMode == _immersive) return;
+    _immersive = editor.performanceMode;
+    SystemChrome.setEnabledSystemUIMode(
+        _immersive ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge);
+    if (_immersive) {
+      // The drawer holds panels that performance mode hides.
+      if (_scaffoldKey.currentState?.isEndDrawerOpen ?? false) {
+        Navigator.of(context).maybePop();
+      }
+    }
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _shortcutsFocus.requestFocus());
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: AppColors.red,
+      duration: const Duration(seconds: 6),
+    ));
+  }
+
+  /// Right-hand panels (Library / Bookmarks / Setlists) in wide mode.
+  /// In narrow mode they live in the endDrawer, which has its own close action.
   bool _panelsOpen = true;
 
   void _togglePanels(bool wide) {
@@ -115,10 +219,25 @@ class _ArpegeHomeState extends State<ArpegeHome> {
         const SingleActivator(LogicalKeyboardKey.arrowRight): editor.nextPage,
         const SingleActivator(LogicalKeyboardKey.pageUp): editor.prevPage,
         const SingleActivator(LogicalKeyboardKey.pageDown): editor.nextPage,
+        // Bluetooth/USB page-turn pedals (AirTurn, PageFlip, iRig BlueTurn,
+        // Donner…): they announce themselves as an HID keyboard, but their
+        // default mapping varies by model — cover the most common
+        // configurations in addition to the left/right arrows and
+        // Page Up/Down already handled above.
+        const SingleActivator(LogicalKeyboardKey.arrowUp): editor.prevPage,
+        const SingleActivator(LogicalKeyboardKey.arrowDown): editor.nextPage,
+        const SingleActivator(LogicalKeyboardKey.space): editor.nextPage,
+        const SingleActivator(LogicalKeyboardKey.space, shift: true):
+            editor.prevPage,
+        const SingleActivator(LogicalKeyboardKey.backspace): editor.prevPage,
         const SingleActivator(LogicalKeyboardKey.home): editor.goFirst,
         const SingleActivator(LogicalKeyboardKey.end): editor.goLast,
         const SingleActivator(LogicalKeyboardKey.escape): () =>
-            editor.setTool(null),
+            editor.performanceMode
+                ? editor.setPerformanceMode(false)
+                : editor.setTool(null),
+        const SingleActivator(LogicalKeyboardKey.f5): () =>
+            editor.setPerformanceMode(!editor.performanceMode),
         const SingleActivator(LogicalKeyboardKey.f9): () =>
             _togglePanels(MediaQuery.sizeOf(context).width >= 900),
         const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): () =>
@@ -131,7 +250,7 @@ class _ArpegeHomeState extends State<ArpegeHome> {
     if (editor.currentPdfPath == null) return;
     final page = editor.currentSourcePage;
     final label = await promptText(context,
-        title: 'Nouveau signet', label: 'Nom du signet (page ${page + 1})');
+        title: 'New bookmark', label: 'Bookmark name (page ${page + 1})');
     if (label != null) editor.addBookmark(label);
   }
 
@@ -142,17 +261,26 @@ class _ArpegeHomeState extends State<ArpegeHome> {
     return CallbackShortcuts(
       bindings: _shortcuts(editor),
       child: Focus(
+        focusNode: _shortcutsFocus,
         autofocus: true,
         child: LayoutBuilder(
           builder: (context, constraints) {
+            if (editor.performanceMode) {
+              return const Scaffold(
+                backgroundColor: AppColors.crust,
+                body: _PerformanceView(),
+              );
+            }
             final wide = constraints.maxWidth >= 900;
             return Scaffold(
               key: _scaffoldKey,
               endDrawer: wide
                   ? null
                   : Drawer(
-                      child: PanelsView(
-                        onClose: () => Navigator.of(context).maybePop(),
+                      child: SafeArea(
+                        child: PanelsView(
+                          onClose: () => Navigator.of(context).maybePop(),
+                        ),
                       ),
                     ),
               body: SafeArea(
@@ -175,12 +303,16 @@ class _ArpegeHomeState extends State<ArpegeHome> {
                     Container(
                       width: 320,
                       decoration: const BoxDecoration(
-                        color: AppColors.mantle,
                         border: Border(
                             left: BorderSide(color: AppColors.surface0)),
                       ),
-                      child: PanelsView(
-                        onClose: () => setState(() => _panelsOpen = false),
+                      // The background is a Material, not the decoration:
+                      // the list tiles paint their ink splashes on it.
+                      child: Material(
+                        color: AppColors.mantle,
+                        child: PanelsView(
+                          onClose: () => setState(() => _panelsOpen = false),
+                        ),
                       ),
                     ),
                 ],
@@ -194,9 +326,40 @@ class _ArpegeHomeState extends State<ArpegeHome> {
   }
 }
 
-/// Panneaux latéraux en onglets (Bibliothèque / Signets / Setlists).
+/// Performance mode: the score alone, edge to edge, plus a discreet exit
+/// button in a corner, out of the way of the page-turn tap zones.
+class _PerformanceView extends StatelessWidget {
+  const _PerformanceView();
+
+  @override
+  Widget build(BuildContext context) {
+    final editor = context.read<EditorController>();
+    return Stack(
+      children: [
+        const Positioned.fill(child: SheetView()),
+        Positioned(
+          top: 0,
+          right: 0,
+          child: SafeArea(
+            child: Opacity(
+              opacity: 0.35,
+              child: IconButton(
+                icon: const Icon(Icons.fullscreen_exit),
+                tooltip: 'Exit performance mode (Esc)',
+                color: AppColors.subtext,
+                onPressed: () => editor.setPerformanceMode(false),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Tabbed side panels (Library / Bookmarks / Setlists).
 class PanelsView extends StatelessWidget {
-  /// Ferme le panneau (repli latéral en mode large, fermeture du drawer sinon).
+  /// Closes the panel (collapses it in wide mode, closes the drawer otherwise).
   final VoidCallback? onClose;
   const PanelsView({super.key, this.onClose});
 
@@ -209,8 +372,8 @@ class PanelsView extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              // Libellés compactés : la croix prend de la place sur 320 px et
-              // « Bibliothèque » est le plus long des trois onglets.
+              // Compact labels: the close button takes up room at 320 px and
+              // "Bookmarks" is the longest of the three tab names.
               const Expanded(
                 child: TabBar(
                   labelColor: AppColors.blue,
@@ -221,8 +384,8 @@ class PanelsView extends StatelessWidget {
                       TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   unselectedLabelStyle: TextStyle(fontSize: 13),
                   tabs: [
-                    Tab(text: 'Bibliothèque'),
-                    Tab(text: 'Signets'),
+                    Tab(text: 'Library'),
+                    Tab(text: 'Bookmarks'),
                     Tab(text: 'Setlists'),
                   ],
                 ),
@@ -230,7 +393,7 @@ class PanelsView extends StatelessWidget {
               if (onClose != null)
                 IconButton(
                   icon: const Icon(Icons.close, size: 18),
-                  tooltip: 'Fermer le panneau (F9)',
+                  tooltip: 'Close panel (F9)',
                   visualDensity: VisualDensity.compact,
                   color: AppColors.subtext,
                   onPressed: onClose,
@@ -265,6 +428,14 @@ class _StatusBar extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Row(
         children: [
+          if (editor.hasUnsavedChanges)
+            const Padding(
+              padding: EdgeInsets.only(right: 10),
+              child: Text(
+                '● unsaved',
+                style: TextStyle(color: AppColors.peach, fontSize: 12),
+              ),
+            ),
           Expanded(
             child: Text(
               editor.statusHint,
@@ -274,7 +445,7 @@ class _StatusBar extends StatelessWidget {
             ),
           ),
           const Text(
-            'molette : zoom   •   glisser : déplacer   •   Échap : désélectionner',
+            'scroll: zoom   •   drag: pan   •   Esc: deselect',
             style: TextStyle(color: AppColors.subtext, fontSize: 12),
           ),
         ],
