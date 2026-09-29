@@ -326,8 +326,8 @@ class _ArpegeHomeState extends State<ArpegeHome> {
   }
 }
 
-/// Performance mode: the score alone, edge to edge, plus a discreet exit
-/// button in a corner, out of the way of the page-turn tap zones.
+/// Performance mode: the score alone, edge to edge, plus a close button in
+/// a corner, out of the way of the page-turn tap zones.
 class _PerformanceView extends StatelessWidget {
   const _PerformanceView();
 
@@ -341,12 +341,17 @@ class _PerformanceView extends StatelessWidget {
           top: 0,
           right: 0,
           child: SafeArea(
-            child: Opacity(
-              opacity: 0.35,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              // Translucent, so it does not draw the eye while playing, but
+              // on a dark disc so it stays visible over a white page.
               child: IconButton(
-                icon: const Icon(Icons.fullscreen_exit),
+                icon: const Icon(Icons.close),
                 tooltip: 'Exit performance mode (Esc)',
-                color: AppColors.subtext,
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.crust.withValues(alpha: 0.55),
+                  foregroundColor: AppColors.text.withValues(alpha: 0.85),
+                ),
                 onPressed: () => editor.setPerformanceMode(false),
               ),
             ),

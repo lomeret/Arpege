@@ -1,6 +1,7 @@
 import 'package:arpege/main.dart';
 import 'package:arpege/widgets/toolbar.dart';
 import 'package:arpege/widgets/tool_sidebar.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -31,5 +32,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(editor.performanceMode, isFalse);
     expect(find.byType(ArpegeToolbar), findsOneWidget);
+  });
+
+  testWidgets('the close cross exits performance mode', (tester) async {
+    final editor = await pumpArpegeWithScore(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.f5);
+    await tester.pumpAndSettle();
+    expect(editor.performanceMode, isTrue);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(editor.performanceMode, isFalse);
+    expect(find.byType(ArpegeToolbar), findsOneWidget);
+    // The tap landed on the cross, not on the page-turn zone behind it.
+    expect(editor.seqPos, 0);
   });
 }
